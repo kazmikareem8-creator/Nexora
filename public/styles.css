@@ -48,3 +48,13 @@
 .key-list{display:grid;gap:10px;margin-top:18px}
 .key-meta{display:grid;gap:5px;min-width:0}
 .key-meta small{color:#a0ad9d;font-size:12px;overflow-wrap:anywhere}
+
+.project-row-description{color:var(--muted);font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.project-settings-form textarea{width:100%;min-height:105px;resize:vertical;border:1px solid #35432d;border-radius:9px;background:#050805;color:white;padding:12px 13px;font:14px var(--font)}
+.project-settings-form textarea:focus{outline:none;border-color:var(--lime);box-shadow:0 0 0 3px #9cff1918}
+.project-danger{margin:30px 0 18px;padding:18px;border:1px solid #633b32;border-radius:12px;background:#180d0b}
+.project-danger h3{margin:0 0 8px;font:600 16px var(--display);color:#ffb0a0}
+.project-danger p{color:#bda9a4;font-size:12px;line-height:1.6}
+.danger-button{border-color:#8a4c40;color:#ffb0a0}
+.danger-button:hover{border-color:#ff8f7a;color:#ffd0c7}
+@media(max-width:520px){.project-page-row{flex-wrap:wrap}.project-page-row .secondary-button{margin-left:auto}.project-settings-form .settings-actions>*{flex:1}}

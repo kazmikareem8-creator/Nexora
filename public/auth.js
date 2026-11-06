@@ -19,7 +19,7 @@
       <p class="auth-description" id="authDescription">Sign in to your Nexora workspace.</p>
       <div class="auth-switch"><button type="button" class="auth-tab active" id="loginTab">Sign in</button><button type="button" class="auth-tab" id="registerTab">Create account</button></div>
       <div id="displayNameField" hidden><label for="authName">Display name</label><input id="authName" maxlength="40" autocomplete="nickname" placeholder="Your name"></div>
-      <label for="authEmail">Email address</label><input id="authEmail" type="email" maxlength="254" autocomplete="email" required value="kazmikareem8@gmail.com" placeholder="you@example.com">
+      <label for="authEmail">Email address</label><input id="authEmail" type="email" maxlength="254" autocomplete="email" required placeholder="you@example.com">
       <label for="authPassword">Password</label><input id="authPassword" type="password" minlength="10" maxlength="72" autocomplete="current-password" required placeholder="At least 10 characters">
       <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
       <button class="primary-button auth-submit" id="authSubmit" type="submit">Sign in →</button>

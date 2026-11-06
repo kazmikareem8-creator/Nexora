@@ -41,3 +41,12 @@
 
 
 /* Light theme contrast fix */
+
+/* Search suggestions */
+.search-box{position:relative}
+.search-results{position:absolute;z-index:50;top:calc(100% + 12px);left:0;right:0;max-height:340px;overflow:auto;padding:8px;background:#101510;border:1px solid #29352a;border-radius:14px;box-shadow:0 18px 48px #000b}
+.search-results[hidden]{display:none}
+.search-result{display:flex;width:100%;flex-direction:column;gap:3px;text-align:left;padding:11px 12px;border:0;border-radius:9px;background:transparent;color:#f2f6f0;cursor:pointer}
+.search-result:hover,.search-result:focus{background:#1c281c;outline:none}
+.search-result small,.search-empty{color:#9ba99a;font-size:12px}
+.search-empty{padding:13px}

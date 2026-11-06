@@ -50,3 +50,9 @@
 .search-result:hover,.search-result:focus{background:#1c281c;outline:none}
 .search-result small,.search-empty{color:#9ba99a;font-size:12px}
 .search-empty{padding:13px}
+
+.key-reveal{display:grid;gap:12px;margin-top:18px;padding:16px;border:1px solid #9bff35;border-radius:12px;background:#111b0d;overflow-wrap:anywhere}
+.key-reveal code{display:block;padding:12px;border-radius:8px;background:#050805;color:#c6ff8a;font-size:13px;user-select:all}
+.key-list{display:grid;gap:10px;margin-top:18px}
+.key-meta{display:grid;gap:5px;min-width:0}
+.key-meta small{color:#a0ad9d;font-size:12px;overflow-wrap:anywhere}

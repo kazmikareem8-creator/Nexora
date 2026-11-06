@@ -23,8 +23,6 @@ form.addEventListener("submit",e=>{e.preventDefault();const name=nameInput.value
 nav.forEach(b=>b.addEventListener("click",()=>{if(b.dataset.view)setView(b.dataset.view);$("#sidebar").classList.remove("open");}));
 $(".quick-link").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
 $("#menuButton").addEventListener("click",()=>$("#sidebar").classList.toggle("open"));
-$("#themeToggle").addEventListener("click",()=>{const light=document.documentElement.classList.toggle("light-theme");try{localStorage.setItem("nexora-theme",light?"light":"dark");}catch{}$("#themeToggle").setAttribute("aria-pressed",String(light));$("#themeToggle").setAttribute("aria-label",light?"Switch to dark theme":"Switch to light theme");});
-try{if(localStorage.getItem("nexora-theme")==="light"){document.documentElement.classList.add("light-theme");$("#themeToggle").setAttribute("aria-pressed","true");$("#themeToggle").setAttribute("aria-label","Switch to dark theme");}}catch{}
 $("#profileButton").addEventListener("click",()=>setView("settings"));$("#notificationButton").addEventListener("click",()=>alert("You're all caught up. Nexora notifications will appear here."));
 const search=$(".search-box input");search.addEventListener("keydown",e=>{if(e.key==="Enter"){const q=search.value.trim().toLowerCase();if(!q)return;if("projects project".includes(q))setView("projects");else if("settings preferences theme".includes(q))setView("settings");else if("keys api".includes(q))setView("api-keys");else{const match=projects.find(p=>p.name.toLowerCase().includes(q));if(match)openProject(match.id);else alert("No matching Nexora page or project found.");}}});
 $("#sidebar .brand").addEventListener("click",e=>{e.preventDefault();setView("overview");});

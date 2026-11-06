@@ -32,29 +32,92 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
     } catch (error) { console.error("Usage recording failed:", error.message); }
   }
 
-  app.get("/v1/models", requireDatabase, authenticate, async (req, res) => {
-    res.json({ object: "list", data: [], note: "No AI providers are configured yet. Models will appear when a real provider is connected." });
+  const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const geminiKey = process.env.GEMINI_API_KEY;
+
+  app.get("/v1/models", requireDatabase, authenticate, async (_req, res) => {
+    const data = geminiKey
+      ? [{ id: "nexora-text", object: "model", owned_by: "google", capabilities: ["text"] }]
+      : [];
+    res.json({ object: "list", data, note: geminiKey ? "Text generation is available through Nexora." : "No text provider is configured yet." });
   });
 
-  const routes = [
-    { path: "/v1/chat/completions", capability: "text" },
+  app.post("/v1/chat/completions", requireDatabase, authenticate, async (req, res) => {
+    const started = Date.now();
+    const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    const messages = Array.isArray(body.messages) ? body.messages : [];
+    const validMessages = messages.filter(m => m && ["system", "user", "assistant"].includes(m.role) && typeof m.content === "string" && m.content.trim());
+    if (!validMessages.length && !(typeof body.prompt === "string" && body.prompt.trim())) {
+      await record(req, "text", "/v1/chat/completions", body.model, 400, null, started);
+      return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt or valid messages array." } });
+    }
+    if (!geminiKey) {
+      await record(req, "text", "/v1/chat/completions", body.model, 503, null, started);
+      return res.status(503).json({ error: { code: "provider_not_configured", message: "Nexora's text provider is not configured yet." } });
+    }
+
+    const systemText = validMessages.filter(m => m.role === "system").map(m => m.content).join("\n\n");
+    const conversational = validMessages.filter(m => m.role !== "system").map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }]
+    }));
+    if (!conversational.length && typeof body.prompt === "string" && body.prompt.trim()) {
+      conversational.push({ role: "user", parts: [{ text: body.prompt.trim() }] });
+    }
+    const payload = { contents: conversational, generationConfig: {} };
+    if (systemText) payload.systemInstruction = { parts: [{ text: systemText }] };
+    if (Number.isFinite(body.temperature)) payload.generationConfig.temperature = Math.max(0, Math.min(2, body.temperature));
+    if (Number.isInteger(body.max_tokens)) payload.generationConfig.maxOutputTokens = Math.max(1, Math.min(8192, body.max_tokens));
+
+    try {
+      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(geminiModel) + ":generateContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(45000)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const status = response.status === 429 ? 429 : response.status >= 500 ? 503 : 502;
+        await record(req, "text", "/v1/chat/completions", geminiModel, status, "google", started);
+        console.error("Gemini provider error:", response.status, result && result.error && result.error.message ? result.error.message : "Unknown provider error");
+        return res.status(status).json({ error: { code: response.status === 429 ? "provider_rate_limited" : "provider_error", message: response.status === 429 ? "The text provider quota or rate limit was reached. Try again later." : "The text provider could not complete this request. Check provider configuration and try again." } });
+      }
+      const answer = (result.candidates || []).flatMap(c => c.content && c.content.parts || []).map(p => p.text || "").join("").trim();
+      if (!answer) {
+        await record(req, "text", "/v1/chat/completions", geminiModel, 502, "google", started);
+        return res.status(502).json({ error: { code: "empty_provider_response", message: "The text provider returned no text. Try a different prompt." } });
+      }
+      await record(req, "text", "/v1/chat/completions", geminiModel, 200, "google", started);
+      return res.json({
+        id: "nexora-" + crypto.randomUUID(),
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: typeof body.model === "string" ? body.model : "nexora-text",
+        choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }],
+        usage: { prompt_tokens: null, completion_tokens: null, total_tokens: null }
+      });
+    } catch (error) {
+      await record(req, "text", "/v1/chat/completions", geminiModel, 503, "google", started);
+      console.error("Gemini request failed:", error.name, error.message);
+      return res.status(503).json({ error: { code: "provider_unavailable", message: "Nexora could not reach the text provider. Please try again shortly." } });
+    }
+  });
+
+  const mediaRoutes = [
     { path: "/v1/images/generations", capability: "image" },
     { path: "/v1/videos/generations", capability: "video" }
   ];
-  for (const route of routes) {
+  for (const route of mediaRoutes) {
     app.post(route.path, requireDatabase, authenticate, async (req, res) => {
       const started = Date.now();
       const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
-      const model = typeof body.model === "string" ? body.model.slice(0, 120) : null;
-      const prompt = route.capability === "text"
-        ? (Array.isArray(body.messages) && body.messages.some(m => m && typeof m.content === "string" && m.content.trim()) || typeof body.prompt === "string" && body.prompt.trim())
-        : typeof body.prompt === "string" && body.prompt.trim();
-      if (!prompt) {
-        await record(req, route.capability, route.path, model, 400, null, started);
-        return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt or valid messages array." } });
+      if (typeof body.prompt !== "string" || !body.prompt.trim()) {
+        await record(req, route.capability, route.path, body.model, 400, null, started);
+        return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt." } });
       }
-      await record(req, route.capability, route.path, model, 503, null, started);
-      return res.status(503).json({ error: { code: "provider_not_configured", message: "No provider is currently configured for this capability. Nexora will not return a simulated result." } });
+      await record(req, route.capability, route.path, body.model, 503, null, started);
+      return res.status(503).json({ error: { code: "provider_not_configured", message: "No genuinely free provider is connected for this capability yet." } });
     });
   }
 };

@@ -30,6 +30,7 @@ $(".quick-link").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.vie
 $("#menuButton").addEventListener("click",()=>$("#sidebar").classList.toggle("open"));
 $("#profileButton").addEventListener("click",()=>setView("settings"));$("#notificationButton").addEventListener("click",()=>alert("You're all caught up. Nexora notifications will appear here."));
 $("#sidebar .brand").addEventListener("click",e=>{e.preventDefault();setView("overview");});
+window.addEventListener("nexora:auth-changed",()=>loadProjects());
 syncProfile();loadProjects();
 fetch("/api/health").then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{if(d.status!=="online")throw Error();$(".footer-status").lastChild.textContent=" Website online";}).catch(()=>{$(".footer-status").lastChild.textContent=" Connection unavailable";});
 })();

@@ -229,6 +229,8 @@ app.post("/api/auth/logout", requireDatabase, (req, res) => {
 });
 
 
+function validId(value){return typeof value==="string" && /^[1-9][0-9]*$/.test(value) && value.length<=18;}
+
 function requireUser(req,res,next){
   if(!req.session || !req.session.userId) return res.status(401).json({error:"Please sign in to continue."});
   next();
@@ -244,12 +246,14 @@ app.post("/api/projects", requireDatabase, requireUser, async (req,res)=>{
   catch(e){console.error("Project create failed:",e.message);res.status(500).json({error:"Could not create project."});}
 });
 app.patch("/api/projects/:id", requireDatabase, requireUser, async (req,res)=>{
+  if(!validId(req.params.id)) return res.status(400).json({error:"Invalid project ID."});
   const name=typeof req.body.name==="string"?req.body.name.trim().slice(0,80):"";
   if(!name) return res.status(400).json({error:"Enter a project name."});
   try {const r=await pool.query("UPDATE projects SET name=$1 WHERE id=$2 AND user_id=$3 RETURNING id,name,created_at",[name,req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Project not found."});res.json({project:r.rows[0]});}
   catch(e){console.error("Project update failed:",e.message);res.status(500).json({error:"Could not update project."});}
 });
 app.delete("/api/projects/:id", requireDatabase, requireUser, async (req,res)=>{
+  if(!validId(req.params.id)) return res.status(400).json({error:"Invalid project ID."});
   try {const r=await pool.query("DELETE FROM projects WHERE id=$1 AND user_id=$2",[req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Project not found."});res.json({ok:true});}
   catch(e){console.error("Project delete failed:",e.message);res.status(500).json({error:"Could not delete project."});}
 });
@@ -270,9 +274,12 @@ app.post("/api/keys", requireDatabase, requireUser, async (req,res)=>{
   } catch(e){console.error("API key create failed:",e.message);res.status(500).json({error:"Could not create API key."});}
 });
 app.post("/api/keys/:id/revoke", requireDatabase, requireUser, async (req,res)=>{
+  if(!validId(req.params.id)) return res.status(400).json({error:"Invalid API key ID."});
   try {const r=await pool.query("UPDATE api_keys SET revoked_at=NOW() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL RETURNING id",[req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Active API key not found."});res.json({ok:true});}
   catch(e){console.error("API key revoke failed:",e.message);res.status(500).json({error:"Could not revoke API key."});}
 });
+
+app.use("/api", (_req,res)=>res.status(404).json({error:"API route not found."}));
 
 app.get("*", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));

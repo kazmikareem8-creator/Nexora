@@ -35,12 +35,17 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
   const geminiModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
   // Multiple server-side keys allow fallback when one key is rate-limited or unavailable.
   const geminiKeys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
+  // Independent Cloudflare Workers AI fallback (credentials stay on the server).
+  const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const cfApiToken = process.env.CLOUDFLARE_API_TOKEN;
+  const cfModel = process.env.CLOUDFLARE_TEXT_MODEL || "@cf/meta/llama-3.1-8b-instruct";
 
   app.get("/v1/models", requireDatabase, authenticate, async (_req, res) => {
-    const data = geminiKeys.length
+    const textConfigured = geminiKeys.length > 0 || Boolean(cfAccountId && cfApiToken);
+    const data = textConfigured
       ? [{ id: "nexora-text", object: "model", owned_by: "nexora", capabilities: ["text"] }]
       : [];
-    res.json({ object: "list", data, note: geminiKeys.length ? "Text provider configured; availability depends on upstream service and quota." : "No text provider is configured yet." });
+    res.json({ object: "list", data, note: textConfigured ? "Text provider configured; availability depends on upstream service and quota." : "No text provider is configured yet." });
   });
 
   app.post("/v1/chat/completions", requireDatabase, authenticate, async (req, res) => {
@@ -52,7 +57,7 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
       await record(req, "text", "/v1/chat/completions", body.model, 400, null, started);
       return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt or valid messages array." } });
     }
-    if (!geminiKeys.length) {
+    if (!geminiKeys.length && !(cfAccountId && cfApiToken)) {
       await record(req, "text", "/v1/chat/completions", body.model, 503, null, started);
       return res.status(503).json({ error: { code: "provider_not_configured", message: "Nexora's text provider is not configured yet." } });
     }
@@ -102,6 +107,44 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
         console.error("Gemini provider attempt failed:", timedOut ? "timeout after 25 seconds" : error.name + " " + error.message);
       }
     }
+    // Try an independent provider after Gemini keys fail.
+    if (cfAccountId && cfApiToken) {
+      try {
+        const cfMessages = validMessages.map(m => ({ role: m.role, content: m.content }));
+        if (!cfMessages.length && typeof body.prompt === "string" && body.prompt.trim()) {
+          cfMessages.push({ role: "user", content: body.prompt.trim() });
+        }
+        const cfResponse = await fetch(
+          "https://api.cloudflare.com/client/v4/accounts/" + encodeURIComponent(cfAccountId) + "/ai/run/" + encodeURIComponent(cfModel),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfApiToken },
+            body: JSON.stringify({ messages: cfMessages }),
+            signal: AbortSignal.timeout(25000)
+          }
+        );
+        const cfResult = await cfResponse.json().catch(() => ({}));
+        const cfAnswer = cfResult && cfResult.result && typeof cfResult.result.response === "string"
+          ? cfResult.result.response.trim() : "";
+        if (cfResponse.ok && cfAnswer) {
+          await record(req, "text", "/v1/chat/completions", cfModel, 200, "cloudflare", started);
+          return res.json({
+            id: "nexora-" + crypto.randomUUID(), object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: typeof body.model === "string" ? body.model : "nexora-text",
+            choices: [{ index: 0, message: { role: "assistant", content: cfAnswer }, finish_reason: "stop" }],
+            usage: { prompt_tokens: null, completion_tokens: null, total_tokens: null }
+          });
+        }
+        console.error("Cloudflare fallback failed:", cfResponse.status, cfResult && cfResult.errors ? JSON.stringify(cfResult.errors) : "Empty response");
+        lastFailure = { kind: cfResponse.status === 429 ? "rate_limit" : "http", status: cfResponse.status || 502 };
+      } catch (error) {
+        const timedOut = error && (error.name === "TimeoutError" || error.name === "AbortError");
+        console.error("Cloudflare fallback failed:", timedOut ? "timeout after 25 seconds" : error.name + " " + error.message);
+        lastFailure = { kind: timedOut ? "timeout" : "network", status: timedOut ? 504 : 503 };
+      }
+    }
+
     const kind = lastFailure && lastFailure.kind;
     const status = kind === "rate_limit" ? 429 : kind === "timeout" ? 504 : kind === "network" ? 503 : 502;
     const code = kind === "rate_limit" ? "provider_rate_limited" : kind === "timeout" ? "provider_timeout" : kind === "network" ? "provider_unavailable" : "provider_error";

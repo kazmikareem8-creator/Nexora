@@ -33,17 +33,14 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
   }
 
   const geminiModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  // Multiple server-side keys allow fallback when one key is rate-limited or unavailable.
   const geminiKeys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
-  // Independent Groq fallback (credential stays on the server).
   const groqApiKey = process.env.GROQ_API_KEY;
-  const groqModel = process.env.GROQ_TEXT_MODEL || "llama-3.3-70b-versatile";
+  // Use a currently supported Groq model by default; override only with a model enabled for this key.
+  const groqModel = process.env.GROQ_TEXT_MODEL || "openai/gpt-oss-20b";
 
   app.get("/v1/models", requireDatabase, authenticate, async (_req, res) => {
     const textConfigured = geminiKeys.length > 0 || Boolean(groqApiKey);
-    const data = textConfigured
-      ? [{ id: "nexora-text", object: "model", owned_by: "nexora", capabilities: ["text"] }]
-      : [];
+    const data = textConfigured ? [{ id: "nexora-text", object: "model", owned_by: "nexora", capabilities: ["text"] }] : [];
     res.json({ object: "list", data, note: textConfigured ? "Text provider configured; availability depends on upstream service and quota." : "No text provider is configured yet." });
   });
 
@@ -56,7 +53,7 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
       await record(req, "text", "/v1/chat/completions", body.model, 400, null, started);
       return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt or valid messages array." } });
     }
-    if (!geminiKeys.length && !(cfAccountId && cfApiToken)) {
+    if (!geminiKeys.length && !groqApiKey) {
       await record(req, "text", "/v1/chat/completions", body.model, 503, null, started);
       return res.status(503).json({ error: { code: "provider_not_configured", message: "Nexora's text provider is not configured yet." } });
     }
@@ -66,104 +63,73 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }]
     }));
-    if (!conversational.length && typeof body.prompt === "string" && body.prompt.trim()) {
-      conversational.push({ role: "user", parts: [{ text: body.prompt.trim() }] });
-    }
+    if (!conversational.length && typeof body.prompt === "string" && body.prompt.trim()) conversational.push({ role: "user", parts: [{ text: body.prompt.trim() }] });
     const payload = { contents: conversational, generationConfig: {} };
     if (systemText) payload.systemInstruction = { parts: [{ text: systemText }] };
     if (Number.isFinite(body.temperature)) payload.generationConfig.temperature = Math.max(0, Math.min(2, body.temperature));
     if (Number.isInteger(body.max_tokens)) payload.generationConfig.maxOutputTokens = Math.max(1, Math.min(8192, body.max_tokens));
 
     let lastFailure = null;
-    for (let i = 0; i < geminiKeys.length; i++) {
+    for (const key of geminiKeys) {
       try {
         const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(geminiModel) + ":generateContent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKeys[i] },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(25000)
+          method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify(payload), signal: AbortSignal.timeout(20000)
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
           lastFailure = { kind: response.status === 429 ? "rate_limit" : "http", status: response.status };
-          console.error("Gemini provider attempt failed:", response.status, result && result.error && result.error.message ? result.error.message : "Unknown provider error");
+          console.error("Gemini provider attempt failed:", response.status, result?.error?.message || "Unknown provider error");
           if (response.status === 429 || response.status >= 500) continue;
           break;
         }
-        const answer = (result.candidates || []).flatMap(c => c.content && c.content.parts || []).map(p => p.text || "").join("").trim();
+        const answer = (result.candidates || []).flatMap(c => c.content?.parts || []).map(p => p.text || "").join("").trim();
         if (!answer) { lastFailure = { kind: "empty", status: 502 }; continue; }
         await record(req, "text", "/v1/chat/completions", geminiModel, 200, "google", started);
-        return res.json({
-          id: "nexora-" + crypto.randomUUID(), object: "chat.completion",
-          created: Math.floor(Date.now() / 1000),
-          model: typeof body.model === "string" ? body.model : "nexora-text",
-          choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }],
-          usage: { prompt_tokens: null, completion_tokens: null, total_tokens: null }
-        });
+        return res.json({ id: "nexora-" + crypto.randomUUID(), object: "chat.completion", created: Math.floor(Date.now() / 1000), model: typeof body.model === "string" ? body.model : "nexora-text", choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }], usage: { prompt_tokens: null, completion_tokens: null, total_tokens: null } });
       } catch (error) {
-        const timedOut = error && (error.name === "TimeoutError" || error.name === "AbortError");
+        const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
         lastFailure = { kind: timedOut ? "timeout" : "network", status: timedOut ? 504 : 503 };
-        console.error("Gemini provider attempt failed:", timedOut ? "timeout after 25 seconds" : error.name + " " + error.message);
+        console.error("Gemini provider attempt failed:", timedOut ? "timeout after 20 seconds" : error.name + " " + error.message);
       }
     }
-    // Try an independent Groq provider after Gemini keys fail.
+
     if (groqApiKey) {
       try {
         const groqMessages = validMessages.map(m => ({ role: m.role, content: m.content }));
-        if (!groqMessages.length && typeof body.prompt === "string" && body.prompt.trim()) {
-          groqMessages.push({ role: "user", content: body.prompt.trim() });
-        }
+        if (!groqMessages.length && typeof body.prompt === "string" && body.prompt.trim()) groqMessages.push({ role: "user", content: body.prompt.trim() });
         const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + groqApiKey },
-          body: JSON.stringify({
-            model: groqModel,
-            messages: groqMessages,
-            ...(Number.isFinite(body.temperature) ? { temperature: Math.max(0, Math.min(2, body.temperature)) } : {}),
-            ...(Number.isInteger(body.max_tokens) ? { max_tokens: Math.max(1, Math.min(8192, body.max_tokens)) } : {})
-          }),
-          signal: AbortSignal.timeout(25000)
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + groqApiKey },
+          body: JSON.stringify({ model: groqModel, messages: groqMessages, ...(Number.isFinite(body.temperature) ? { temperature: Math.max(0, Math.min(2, body.temperature)) } : {}), ...(Number.isInteger(body.max_tokens) ? { max_tokens: Math.max(1, Math.min(8192, body.max_tokens)) } : {}) }),
+          signal: AbortSignal.timeout(20000)
         });
         const groqResult = await groqResponse.json().catch(() => ({}));
-        const groqAnswer = groqResult && groqResult.choices && groqResult.choices[0] &&
-          groqResult.choices[0].message && typeof groqResult.choices[0].message.content === "string"
-          ? groqResult.choices[0].message.content.trim() : "";
-        if (groqResponse.ok && groqAnswer) {
+        const groqAnswer = groqResult?.choices?.[0]?.message?.content;
+        if (groqResponse.ok && typeof groqAnswer === "string" && groqAnswer.trim()) {
           await record(req, "text", "/v1/chat/completions", groqModel, 200, "groq", started);
-          return res.json({
-            id: "nexora-" + crypto.randomUUID(), object: "chat.completion",
-            created: Math.floor(Date.now() / 1000),
-            model: typeof body.model === "string" ? body.model : "nexora-text",
-            choices: [{ index: 0, message: { role: "assistant", content: groqAnswer }, finish_reason: "stop" }],
-            usage: groqResult.usage || { prompt_tokens: null, completion_tokens: null, total_tokens: null }
-          });
+          return res.json({ id: "nexora-" + crypto.randomUUID(), object: "chat.completion", created: Math.floor(Date.now() / 1000), model: typeof body.model === "string" ? body.model : "nexora-text", choices: [{ index: 0, message: { role: "assistant", content: groqAnswer.trim() }, finish_reason: "stop" }], usage: groqResult.usage || { prompt_tokens: null, completion_tokens: null, total_tokens: null } });
         }
-        console.error("Groq fallback failed:", groqResponse.status,
-          groqResult && groqResult.error ? JSON.stringify(groqResult.error) : "Empty response");
+        console.error("Groq fallback failed:", groqResponse.status, groqResult?.error ? JSON.stringify(groqResult.error) : "Empty response");
         lastFailure = { kind: groqResponse.status === 429 ? "rate_limit" : "http", status: groqResponse.status || 502 };
       } catch (error) {
-        const timedOut = error && (error.name === "TimeoutError" || error.name === "AbortError");
-        console.error("Groq fallback failed:", timedOut ? "timeout after 25 seconds" : error.name + " " + error.message);
+        const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+        console.error("Groq fallback failed:", timedOut ? "timeout after 20 seconds" : error.name + " " + error.message);
         lastFailure = { kind: timedOut ? "timeout" : "network", status: timedOut ? 504 : 503 };
       }
     }
 
-    const kind = lastFailure && lastFailure.kind;
+    const kind = lastFailure?.kind;
     const status = kind === "rate_limit" ? 429 : kind === "timeout" ? 504 : kind === "network" ? 503 : 502;
     const code = kind === "rate_limit" ? "provider_rate_limited" : kind === "timeout" ? "provider_timeout" : kind === "network" ? "provider_unavailable" : "provider_error";
     const message = kind === "rate_limit" ? "All configured text provider keys are rate-limited. Try again later." :
       kind === "timeout" ? "All configured text provider attempts timed out. The upstream provider may be overloaded or unreachable." :
       kind === "network" ? "Nexora could not reach the text provider. Check provider connectivity and try again." :
       "The text provider rejected the request. Check the configured model and API key.";
-    await record(req, "text", "/v1/chat/completions", geminiModel, status, "google", started);
+    await record(req, "text", "/v1/chat/completions", "nexora-text", status, "gateway", started);
     return res.status(status).json({ error: { code, message } });
   });
 
-  const mediaRoutes = [
-    { path: "/v1/images/generations", capability: "image" },
-    { path: "/v1/videos/generations", capability: "video" }
-  ];
-  for (const route of mediaRoutes) {
+  for (const route of [{ path: "/v1/images/generations", capability: "image" }, { path: "/v1/videos/generations", capability: "video" }]) {
     app.post(route.path, requireDatabase, authenticate, async (req, res) => {
       const started = Date.now();
       const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};

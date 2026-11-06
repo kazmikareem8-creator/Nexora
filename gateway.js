@@ -33,13 +33,14 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
   }
 
   const geminiModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  const geminiKey = process.env.GEMINI_API_KEY;
+  // Multiple server-side keys allow fallback when one key is rate-limited or unavailable.
+  const geminiKeys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
 
   app.get("/v1/models", requireDatabase, authenticate, async (_req, res) => {
-    const data = geminiKey
-      ? [{ id: "nexora-text", object: "model", owned_by: "google", capabilities: ["text"] }]
+    const data = geminiKeys.length
+      ? [{ id: "nexora-text", object: "model", owned_by: "nexora", capabilities: ["text"] }]
       : [];
-    res.json({ object: "list", data, note: geminiKey ? "Text generation is available through Nexora." : "No text provider is configured yet." });
+    res.json({ object: "list", data, note: geminiKeys.length ? "Text provider configured; availability depends on upstream service and quota." : "No text provider is configured yet." });
   });
 
   app.post("/v1/chat/completions", requireDatabase, authenticate, async (req, res) => {
@@ -51,7 +52,7 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
       await record(req, "text", "/v1/chat/completions", body.model, 400, null, started);
       return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt or valid messages array." } });
     }
-    if (!geminiKey) {
+    if (!geminiKeys.length) {
       await record(req, "text", "/v1/chat/completions", body.model, 503, null, started);
       return res.status(503).json({ error: { code: "provider_not_configured", message: "Nexora's text provider is not configured yet." } });
     }
@@ -69,42 +70,47 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
     if (Number.isFinite(body.temperature)) payload.generationConfig.temperature = Math.max(0, Math.min(2, body.temperature));
     if (Number.isInteger(body.max_tokens)) payload.generationConfig.maxOutputTokens = Math.max(1, Math.min(8192, body.max_tokens));
 
-    try {
-      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(geminiModel) + ":generateContent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-        body: JSON.stringify(payload),
-        // Allow slower free-tier responses more time before aborting.
-        signal: AbortSignal.timeout(90000)
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const status = response.status === 429 ? 429 : response.status >= 500 ? 503 : 502;
-        await record(req, "text", "/v1/chat/completions", geminiModel, status, "google", started);
-        console.error("Gemini provider error:", response.status, result && result.error && result.error.message ? result.error.message : "Unknown provider error");
-        return res.status(status).json({ error: { code: response.status === 429 ? "provider_rate_limited" : "provider_error", message: response.status === 429 ? "The text provider quota or rate limit was reached. Try again later." : "The text provider returned an error. Check provider configuration and try again." } });
+    let lastFailure = null;
+    for (let i = 0; i < geminiKeys.length; i++) {
+      try {
+        const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(geminiModel) + ":generateContent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKeys[i] },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(25000)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          lastFailure = { kind: response.status === 429 ? "rate_limit" : "http", status: response.status };
+          console.error("Gemini provider attempt failed:", response.status, result && result.error && result.error.message ? result.error.message : "Unknown provider error");
+          if (response.status === 429 || response.status >= 500) continue;
+          break;
+        }
+        const answer = (result.candidates || []).flatMap(c => c.content && c.content.parts || []).map(p => p.text || "").join("").trim();
+        if (!answer) { lastFailure = { kind: "empty", status: 502 }; continue; }
+        await record(req, "text", "/v1/chat/completions", geminiModel, 200, "google", started);
+        return res.json({
+          id: "nexora-" + crypto.randomUUID(), object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: typeof body.model === "string" ? body.model : "nexora-text",
+          choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }],
+          usage: { prompt_tokens: null, completion_tokens: null, total_tokens: null }
+        });
+      } catch (error) {
+        const timedOut = error && (error.name === "TimeoutError" || error.name === "AbortError");
+        lastFailure = { kind: timedOut ? "timeout" : "network", status: timedOut ? 504 : 503 };
+        console.error("Gemini provider attempt failed:", timedOut ? "timeout after 25 seconds" : error.name + " " + error.message);
       }
-      const answer = (result.candidates || []).flatMap(c => c.content && c.content.parts || []).map(p => p.text || "").join("").trim();
-      if (!answer) {
-        await record(req, "text", "/v1/chat/completions", geminiModel, 502, "google", started);
-        return res.status(502).json({ error: { code: "empty_provider_response", message: "The text provider returned no text. Try a different prompt." } });
-      }
-      await record(req, "text", "/v1/chat/completions", geminiModel, 200, "google", started);
-      return res.json({
-        id: "nexora-" + crypto.randomUUID(),
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: typeof body.model === "string" ? body.model : "nexora-text",
-        choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }],
-        usage: { prompt_tokens: null, completion_tokens: null, total_tokens: null }
-      });
-    } catch (error) {
-      const timedOut = error && (error.name === "TimeoutError" || error.name === "AbortError");
-      const status = timedOut ? 504 : 503;
-      await record(req, "text", "/v1/chat/completions", geminiModel, status, "google", started);
-      console.error("Gemini request failed:", timedOut ? "provider request timed out after 90 seconds" : error.name + " " + error.message);
-      return res.status(status).json({ error: { code: timedOut ? "provider_timeout" : "provider_unavailable", message: timedOut ? "The text provider did not respond within 90 seconds. Try again shortly; the provider may be slow or overloaded." : "Nexora could not reach the text provider. Please try again shortly." } });
     }
+    const kind = lastFailure && lastFailure.kind;
+    const status = kind === "rate_limit" ? 429 : kind === "timeout" ? 504 : kind === "network" ? 503 : 502;
+    const code = kind === "rate_limit" ? "provider_rate_limited" : kind === "timeout" ? "provider_timeout" : kind === "network" ? "provider_unavailable" : "provider_error";
+    const message = kind === "rate_limit" ? "All configured text provider keys are rate-limited. Try again later." :
+      kind === "timeout" ? "All configured text provider attempts timed out. The upstream provider may be overloaded or unreachable." :
+      kind === "network" ? "Nexora could not reach the text provider. Check provider connectivity and try again." :
+      "The text provider rejected the request. Check the configured model and API key.";
+    await record(req, "text", "/v1/chat/completions", geminiModel, status, "google", started);
+    return res.status(status).json({ error: { code, message } });
   });
 
   const mediaRoutes = [

@@ -43,6 +43,27 @@ async function initializeDatabase() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(80) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_keys (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
+        name VARCHAR(80) NOT NULL,
+        key_prefix VARCHAR(24) NOT NULL,
+        key_hash CHAR(64) NOT NULL UNIQUE,
+        last_used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        revoked_at TIMESTAMPTZ
+      )
+    `);
     databaseReady = true;
     databaseError = null;
     console.log("Nexora database initialized");
@@ -205,6 +226,52 @@ app.post("/api/auth/logout", requireDatabase, (req, res) => {
     });
     res.json({ ok: true });
   });
+});
+
+
+function requireUser(req,res,next){
+  if(!req.session || !req.session.userId) return res.status(401).json({error:"Please sign in to continue."});
+  next();
+}
+app.get("/api/projects", requireDatabase, requireUser, async (req,res)=>{
+  try { const r=await pool.query("SELECT id,name,created_at FROM projects WHERE user_id=$1 ORDER BY created_at DESC",[req.session.userId]); res.json({projects:r.rows}); }
+  catch(e){ console.error("Projects load failed:",e.message); res.status(500).json({error:"Could not load projects."});}
+});
+app.post("/api/projects", requireDatabase, requireUser, async (req,res)=>{
+  const name=typeof req.body.name==="string"?req.body.name.trim().slice(0,80):"";
+  if(!name) return res.status(400).json({error:"Enter a project name."});
+  try {const r=await pool.query("INSERT INTO projects(user_id,name) VALUES($1,$2) RETURNING id,name,created_at",[req.session.userId,name]);res.status(201).json({project:r.rows[0]});}
+  catch(e){console.error("Project create failed:",e.message);res.status(500).json({error:"Could not create project."});}
+});
+app.patch("/api/projects/:id", requireDatabase, requireUser, async (req,res)=>{
+  const name=typeof req.body.name==="string"?req.body.name.trim().slice(0,80):"";
+  if(!name) return res.status(400).json({error:"Enter a project name."});
+  try {const r=await pool.query("UPDATE projects SET name=$1 WHERE id=$2 AND user_id=$3 RETURNING id,name,created_at",[name,req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Project not found."});res.json({project:r.rows[0]});}
+  catch(e){console.error("Project update failed:",e.message);res.status(500).json({error:"Could not update project."});}
+});
+app.delete("/api/projects/:id", requireDatabase, requireUser, async (req,res)=>{
+  try {const r=await pool.query("DELETE FROM projects WHERE id=$1 AND user_id=$2",[req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Project not found."});res.json({ok:true});}
+  catch(e){console.error("Project delete failed:",e.message);res.status(500).json({error:"Could not delete project."});}
+});
+app.get("/api/keys", requireDatabase, requireUser, async (req,res)=>{
+  try {const r=await pool.query("SELECT id,name,key_prefix,created_at,last_used_at,revoked_at FROM api_keys WHERE user_id=$1 ORDER BY created_at DESC",[req.session.userId]);res.json({keys:r.rows});}
+  catch(e){console.error("API keys load failed:",e.message);res.status(500).json({error:"Could not load API keys."});}
+});
+app.post("/api/keys", requireDatabase, requireUser, async (req,res)=>{
+  const name=typeof req.body.name==="string"?req.body.name.trim().slice(0,80):"";
+  if(!name)return res.status(400).json({error:"Enter a name for this API key."});
+  try {
+    const crypto=require("crypto");
+    const raw="nx_live_"+crypto.randomBytes(32).toString("hex");
+    const hash=crypto.createHash("sha256").update(raw).digest("hex");
+    const prefix=raw.slice(0,16);
+    const r=await pool.query("INSERT INTO api_keys(user_id,name,key_prefix,key_hash) VALUES($1,$2,$3,$4) RETURNING id,name,key_prefix,created_at",[req.session.userId,name,prefix,hash]);
+    res.status(201).json({key:r.rows[0],secret:raw});
+  } catch(e){console.error("API key create failed:",e.message);res.status(500).json({error:"Could not create API key."});}
+});
+app.post("/api/keys/:id/revoke", requireDatabase, requireUser, async (req,res)=>{
+  try {const r=await pool.query("UPDATE api_keys SET revoked_at=NOW() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL RETURNING id",[req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Active API key not found."});res.json({ok:true});}
+  catch(e){console.error("API key revoke failed:",e.message);res.status(500).json({error:"Could not revoke API key."});}
 });
 
 app.get("*", (_req, res) => {

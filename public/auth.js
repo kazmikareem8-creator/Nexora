@@ -117,6 +117,7 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed.");
       renderUser(data.user);
+      window.dispatchEvent(new Event("nexora:auth-changed"));
       dialog.close();
       password.value = "";
       try {
@@ -142,6 +143,7 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Sign out failed.");
       renderUser(null);
+      window.dispatchEvent(new Event("nexora:auth-changed"));
       dialog.close();
     } catch (error) {
       dialog.querySelector("#accountEmail").textContent = error.message;

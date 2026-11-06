@@ -237,7 +237,7 @@ function requireUser(req,res,next){
   next();
 }
 app.get("/api/projects", requireDatabase, requireUser, async (req,res)=>{
-  try { const r=await pool.query("SELECT id,name,created_at FROM projects WHERE user_id=$1 ORDER BY created_at DESC",[req.session.userId]); res.json({projects:r.rows}); }
+  try { const r=await pool.query("SELECT p.id,p.name,p.description,p.created_at,COUNT(k.id)::int AS key_count FROM projects p LEFT JOIN api_keys k ON k.project_id=p.id AND k.user_id=p.user_id WHERE p.user_id=$1 GROUP BY p.id ORDER BY p.created_at DESC",[req.session.userId]); res.json({projects:r.rows}); }
   catch(e){ console.error("Projects load failed:",e.message); res.status(500).json({error:"Could not load projects."});}
 });
 app.post("/api/projects", requireDatabase, requireUser, async (req,res)=>{

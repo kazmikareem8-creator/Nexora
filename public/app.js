@@ -28,28 +28,6 @@ nav.forEach(b=>b.addEventListener("click",()=>{if(b.dataset.view)setView(b.datas
 $(".quick-link").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
 $("#menuButton").addEventListener("click",()=>$("#sidebar").classList.toggle("open"));
 $("#profileButton").addEventListener("click",()=>setView("settings"));$("#notificationButton").addEventListener("click",()=>alert("You're all caught up. Nexora notifications will appear here."));
-const search=$(".search-box input");
-const searchResults=make("div","search-results");searchResults.hidden=true;$(".search-box").append(searchResults);
-const searchItems=[
- {name:"Home",hint:"Main workspace",view:"overview",terms:"home overview start"},
- {name:"Dashboard",hint:"Usage and activity",view:"dashboard",terms:"dashboard usage analytics activity stats"},
- {name:"API Keys",hint:"Create and manage keys",view:"api-keys",terms:"api key keys token generate credentials"},
- {name:"Projects",hint:"Your project workspaces",view:"projects",terms:"project projects workspace app"},
- {name:"Settings",hint:"Workspace preferences",view:"settings",terms:"settings preferences profile account"}
-];
-function runSearch(){
- const q=search.value.trim().toLowerCase();searchResults.replaceChildren();
- if(!q){searchResults.hidden=true;return;}
- const matches=[];
- searchItems.forEach(item=>{if((item.name+" "+item.hint+" "+item.terms).toLowerCase().includes(q)||q.split(/\\s+/).some(word=>item.terms.includes(word)))matches.push({label:item.name,hint:item.hint,action:()=>setView(item.view)});});
- projects.filter(p=>p.name.toLowerCase().includes(q)).forEach(p=>matches.push({label:p.name,hint:"Open project",action:()=>openProject(p.id)}));
- if(!matches.length)searchResults.append(make("div","search-empty","No results found. Try “projects”, “API keys” or “settings”."));
- matches.slice(0,8).forEach(item=>{const b=make("button","search-result");b.type="button";b.append(make("strong","",item.label),make("small","",item.hint));b.addEventListener("click",()=>{item.action();searchResults.hidden=true;search.value="";});searchResults.append(b);});
- searchResults.hidden=false;
-}
-search.addEventListener("input",runSearch);
-search.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();const first=searchResults.querySelector(".search-result");if(first)first.click();}if(e.key==="Escape")searchResults.hidden=true;});
-document.addEventListener("click",e=>{if(!$(".search-box").contains(e.target))searchResults.hidden=true;});
 $("#sidebar .brand").addEventListener("click",e=>{e.preventDefault();setView("overview");});
 syncProfile();loadProjects();
 fetch("/api/health").then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{if(d.status!=="online")throw Error();$(".footer-status").lastChild.textContent=" Website online";}).catch(()=>{$(".footer-status").lastChild.textContent=" Connection unavailable";});

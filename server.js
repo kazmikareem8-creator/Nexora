@@ -296,6 +296,16 @@ app.post("/api/keys/:id/revoke", requireDatabase, requireUser, async (req,res)=>
   catch(e){console.error("API key revoke failed:",e.message);res.status(500).json({error:"Could not revoke API key."});}
 });
 
+// Public API CORS: allow external apps and API clients to call Nexora.
+app.use("/v1", (req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept");
+  res.setHeader("Access-Control-Max-Age", "86400");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 require("./gateway")(app, pool, requireDatabase);
 
 app.use("/v1", (_req,res)=>res.status(404).json({error:{code:"not_found",message:"Nexora API route not found."}}));

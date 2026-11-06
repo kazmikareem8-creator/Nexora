@@ -43,3 +43,6 @@
 .light-theme .auth-tab{color:#596653}
 .light-theme .auth-tab.active{color:#385000}
 @media(max-width:520px){.auth-card,.auth-account{padding:22px}.account-button{padding:9px 11px;font-size:12px;max-width:100px}}
+
+/* Animated sun/moon theme switch */
+.theme-toggle{justify-content:flex-start;transition:background .35s ease,box-shadow .35s ease}.theme-toggle i{display:grid;place-items:center;flex:0 0 23px;transform:translateX(0) rotate(-35deg);transition:transform .42s cubic-bezier(.2,.8,.2,1),background .3s ease}.theme-toggle i::before{content:"☾";font-style:normal;font-size:15px;color:#40512d;line-height:1}.light-theme .theme-toggle{background:#d9e8c8;box-shadow:0 0 14px #9abf6a55}.light-theme .theme-toggle i{transform:translateX(29px) rotate(35deg)}.light-theme .theme-toggle i::before{content:"☀";color:#9a6b00}

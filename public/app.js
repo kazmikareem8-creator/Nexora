@@ -1,109 +1,34 @@
-const navButtons=document.querySelectorAll("[data-view]");
-const pageTitle=document.getElementById("pageTitle");
-const pageSubtitle=document.getElementById("pageSubtitle");
-const welcomeRow=document.querySelector(".welcome-row");
-const dialog=document.getElementById("projectDialog");
-const form=document.getElementById("projectForm");
-const projectNameInput=document.getElementById("projectName");
-const projectList=document.getElementById("projectList");
-const emptyProjects=document.getElementById("emptyProjects");
-const heroProjectCount=document.getElementById("heroProjectCount");
-const notice=document.querySelector(".notice");
-const sectionHeading=document.querySelector(".section-heading");
-const contentGrid=document.querySelector(".content-grid");
-const footer=document.querySelector("footer");
-const viewCopy={
- overview:["Welcome to<br><span>Nexora</span><i class='typing-cursor'></i>","Access powerful AI models, manage your API keys, and bring your ideas to life — all in one place."],
- dashboard:["Your dashboard.","Your Nexora workspace at a glance."],
- projects:["Your projects.","Organise the apps and integrations you plan to connect."],
- "api-keys":["Your API keys.","Manage secure credentials for your applications."],
- docs:["Build with Nexora.","Developer documentation and integration examples."],
- settings:["Workspace settings.","Manage your Nexora workspace preferences."],
- usage:["Your usage.","Usage analytics will appear after the API gateway is connected."],
- logs:["Request logs.","Inspect API activity after the gateway is implemented."],
- models:["Explore models.","Model discovery and routing are planned for a later milestone."]
-};
-const descriptions={
- dashboard:["Workspace dashboard","Your overview is being expanded as Nexora's account and API services are built."],
- projects:["Project workspaces","Create and organise projects here. Project saving is currently a browser-only preview."],
- "api-keys":["API key management","Nexora will generate and manage its own API credentials. No real keys are generated in this preview."],
- docs:["Nexora developer guide","The unified API format, authentication instructions and copy-ready code examples will be added after the gateway is built."],
- settings:["Personalise Nexora.","Update your local profile and workspace preferences."],
- usage:["Usage analytics","Live request counts and token usage will appear after the gateway and usage database are connected."],
- logs:["Activity logs","Request-level logs will be available after the API gateway is implemented."],
- models:["Model directory","Nexora will list providers and models that are actually configured and available. No model connections are active yet."]
-};
-let projects=[];
-const savedSettings=(()=>{try{return JSON.parse(localStorage.getItem("nexora-settings")||"{}");}catch{return {};}})();
-let settings={displayName:savedSettings.displayName||"Creator",workspaceName:savedSettings.workspaceName||"My workspace"};
-let activeView="overview";
-function openProjectDialog(){projectNameInput.value="";dialog.showModal();projectNameInput.focus();}
-document.getElementById("newProjectButton").addEventListener("click",openProjectDialog);
-document.getElementById("emptyCreateButton").addEventListener("click",openProjectDialog);
-form.addEventListener("submit",event=>{event.preventDefault();const name=projectNameInput.value.trim();if(!name)return;projects.push({id:Date.now(),name});document.querySelector(".creator-head strong").textContent="Hello, "+settings.displayName+"!";
-document.querySelector(".plan-card strong").textContent=settings.workspaceName;
-renderProjects();dialog.close();});
+(() => {
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const nav=$$("[data-view]"),title=$("#pageTitle"),subtitle=$("#pageSubtitle"),welcome=$(".welcome-row"),notice=$(".notice"),section=$(".section-heading"),grid=$(".content-grid"),dialog=$("#projectDialog"),form=$("#projectForm"),nameInput=$("#projectName");
+let projects=[];try{projects=JSON.parse(localStorage.getItem("nexora-projects")||"[]");if(!Array.isArray(projects))projects=[];}catch{}
+let settings={displayName:"Creator",workspaceName:"My workspace"};try{settings={...settings,...JSON.parse(localStorage.getItem("nexora-settings")||"{}")};}catch{}
+let currentView="overview",activeProject=null;
+function syncProfile(){$(".creator-head strong").textContent="Hello, "+settings.displayName+"!";$(".plan-card strong").textContent=settings.workspaceName;$("#profileButton").textContent=(settings.displayName||"C").trim().charAt(0).toUpperCase();}
+function persistProjects(){try{localStorage.setItem("nexora-projects",JSON.stringify(projects));}catch{}}
 function renderProjects(){
- heroProjectCount.textContent=String(projects.length);
- emptyProjects.hidden=projects.length>0;
- projectList.innerHTML="";
- projects.forEach(project=>{
-  const row=document.createElement("div");row.className="project-row";
-  const symbol=document.createElement("span");symbol.className="project-symbol";symbol.textContent="▦";
-  const details=document.createElement("div");const title=document.createElement("strong");title.textContent=project.name;
-  const subtitle=document.createElement("small");subtitle.textContent="Local preview project";details.append(title,subtitle);
-  const state=document.createElement("span");state.className="project-state";state.textContent="PREVIEW";
-  row.append(symbol,details,state);projectList.append(row);
- });
+ $("#heroProjectCount").textContent=projects.length;$("#projectList").replaceChildren();$("#emptyProjects").hidden=projects.length>0;
+ projects.forEach(p=>{const b=document.createElement("button");b.type="button";b.className="project-row project-open";b.innerHTML="<span class='project-symbol'>▦</span><span class='project-details'><strong></strong><small>Open project workspace</small></span><span class='project-state'>OPEN →</span>";b.querySelector("strong").textContent=p.name;b.addEventListener("click",()=>openProject(p.id));$("#projectList").append(b);});
 }
-
-function renderSettings(container){
- container.className="settings-page";container.replaceChildren();
- const heading=document.createElement("div");heading.className="settings-heading";
- heading.innerHTML="<span class='eyebrow'>PREFERENCES</span><h2>Workspace settings</h2><p>Saved in this browser only. These settings do not create an account or sync across devices.</p>";
- container.append(heading);
- const form=document.createElement("form");form.className="settings-form";
- form.innerHTML="<label for='displayNameSetting'>Display name</label><input id='displayNameSetting' maxlength='32' autocomplete='nickname'><label for='workspaceNameSetting'>Workspace name</label><input id='workspaceNameSetting' maxlength='40'><div class='settings-actions'><button class='primary-button' type='submit'>Save preferences</button><button class='secondary-button' type='button' id='resetSettings'>Reset</button></div><p class='settings-feedback' id='settingsFeedback' role='status'></p>";
- container.append(form);
- form.elements.displayNameSetting.value=settings.displayName;
- form.elements.workspaceNameSetting.value=settings.workspaceName;
- form.addEventListener("submit",event=>{
-  event.preventDefault();
-  settings={displayName:form.elements.displayNameSetting.value.trim()||"Creator",workspaceName:form.elements.workspaceNameSetting.value.trim()||"My workspace"};
-  try{localStorage.setItem("nexora-settings",JSON.stringify(settings));}catch{}
-  document.querySelector(".creator-head strong").textContent="Hello, "+settings.displayName+"!";
-  document.querySelector(".plan-card strong").textContent=settings.workspaceName;
-  document.getElementById("settingsFeedback").textContent="Preferences saved on this device.";
- });
- form.querySelector("#resetSettings").addEventListener("click",()=>{
-  settings={displayName:"Creator",workspaceName:"My workspace"};
-  try{localStorage.removeItem("nexora-settings");}catch{}
-  form.elements.displayNameSetting.value=settings.displayName;
-  form.elements.workspaceNameSetting.value=settings.workspaceName;
-  document.querySelector(".creator-head strong").textContent="Hello, Creator!";
-  document.querySelector(".plan-card strong").textContent="Free workspace";
-  document.getElementById("settingsFeedback").textContent="Local preferences reset.";
- });
-}
-
-function setView(view){
- if(!viewCopy[view])return;activeView=view;
- navButtons.forEach(button=>button.classList.toggle("active",button.dataset.view===view));
- const isHome=view==="overview";
- pageTitle.innerHTML=viewCopy[view][0];pageSubtitle.textContent=viewCopy[view][1];
- notice.hidden=!isHome;sectionHeading.hidden=!isHome;contentGrid.hidden=!isHome;
- let placeholder=document.getElementById("viewPlaceholder");
- if(isHome){if(placeholder)placeholder.remove();return;}
- if(!placeholder){placeholder=document.createElement("section");placeholder.id="viewPlaceholder";placeholder.className="view-placeholder";welcomeRow.after(placeholder);}
- if(view==="settings"){renderSettings(placeholder);return;}
- const [heading,description]=descriptions[view];placeholder.replaceChildren();
- const wrap=document.createElement("div");const title=document.createElement("h2");title.textContent=heading;
- const paragraph=document.createElement("p");paragraph.textContent=description;
- const badge=document.createElement("span");badge.className="bottom-badge";badge.textContent="PLANNED MILESTONE";
- wrap.append(title,paragraph,badge);placeholder.append(wrap);
-}
-navButtons.forEach(button=>button.addEventListener("click",()=>setView(button.dataset.view)));
-document.getElementById("menuButton").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
-document.querySelectorAll(".sidebar .nav-item").forEach(button=>button.addEventListener("click",()=>document.getElementById("sidebar").classList.remove("open")));
-fetch("/api/health").then(response=>{if(!response.ok)throw new Error("Health check failed");return response.json();}).then(data=>{if(data.status!=="online")throw new Error("Server is not online");document.querySelectorAll(".footer-status").forEach(status=>status.lastChild.textContent=" Website online");}).catch(()=>{document.querySelectorAll(".footer-status").forEach(status=>status.lastChild.textContent=" Connection unavailable");});
-renderProjects();
+function showContent(node){let old=$("#viewPlaceholder");if(!old){old=document.createElement("section");old.id="viewPlaceholder";welcome.after(old);}old.className="view-placeholder";old.replaceChildren(node);}
+function make(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;}
+function panel(titleText,description){const box=make("div","page-card");box.append(make("h2","",titleText),make("p","",description));return box;}
+function openProject(id){activeProject=projects.find(p=>p.id===id);if(!activeProject)return;currentView="project-detail";nav.forEach(b=>b.classList.remove("active"));title.innerHTML="Project<br><span>Workspace</span>";subtitle.textContent=activeProject.name;notice.hidden=true;section.hidden=true;grid.hidden=true;const box=panel(activeProject.name,"This is your project workspace. API keys and live model connections will be added in upcoming milestones.");box.append(make("div","project-meta","Created in this browser · Local preview"));const back=make("button","secondary-button","← Back to projects");back.addEventListener("click",()=>setView("projects"));const rename=make("button","secondary-button","Rename project");rename.addEventListener("click",()=>{const next=prompt("New project name",activeProject.name);if(next&&next.trim()){activeProject.name=next.trim().slice(0,40);persistProjects();renderProjects();openProject(id);}});const remove=make("button","secondary-button","Delete project");remove.addEventListener("click",()=>{if(confirm("Delete "+activeProject.name+"?")){projects=projects.filter(p=>p.id!==id);persistProjects();renderProjects();setView("projects");}});const actions=make("div","settings-actions");actions.append(back,rename,remove);box.append(actions);showContent(box);}
+function renderDocs(){const box=panel("Nexora developer documentation","A quick guide to the current preview and the API platform we are building.");const blocks=[["1. Create a project","Open Projects and choose Create project. Give it a name, then open it to view its workspace."],["2. API keys","The API key manager is not connected yet. Do not paste real secrets into this preview."],["3. API endpoint","The unified Nexora API endpoint will be published after the gateway and provider routing are implemented."],["4. Current status","Projects and preferences are stored in this browser. They are not yet synced to an account or database."]];blocks.forEach(([h,p])=>{box.append(make("h3","doc-heading",h),make("p","doc-copy",p));});const code=make("pre","code-sample","// API examples will be added when the Nexora gateway is live.");box.append(code);showContent(box);}
+function renderSettings(){const box=panel("Workspace settings","These preferences are saved on this device.");const f=make("form","settings-form");f.innerHTML="<label for='displayNameSetting'>Display name</label><input id='displayNameSetting' maxlength='32'><label for='workspaceNameSetting'>Workspace name</label><input id='workspaceNameSetting' maxlength='40'><div class='settings-actions'><button class='primary-button' type='submit'>Save preferences</button><button class='secondary-button' id='resetSettings' type='button'>Reset</button></div><p class='settings-feedback' id='settingsFeedback' role='status'></p>";box.append(f);f.elements.displayNameSetting.value=settings.displayName;f.elements.workspaceNameSetting.value=settings.workspaceName;f.addEventListener("submit",e=>{e.preventDefault();settings={displayName:f.elements.displayNameSetting.value.trim()||"Creator",workspaceName:f.elements.workspaceNameSetting.value.trim()||"My workspace"};try{localStorage.setItem("nexora-settings",JSON.stringify(settings));}catch{}syncProfile();$("#settingsFeedback").textContent="Saved on this device."});$("#resetSettings").addEventListener("click",()=>{settings={displayName:"Creator",workspaceName:"My workspace"};try{localStorage.removeItem("nexora-settings");}catch{}syncProfile();renderSettings();});showContent(box);}
+function renderProjectsPage(){const box=panel("Your projects","Create, open, rename or delete your browser-saved project workspaces.");const create=make("button","primary-button","＋ Create project");create.addEventListener("click",openDialog);box.append(create);const list=make("div","project-page-list");if(!projects.length)list.append(make("p","doc-copy","No projects yet. Create your first project to get started."));projects.forEach(p=>{const row=make("div","project-page-row");row.append(make("span","project-symbol","▦"),make("strong","",p.name));const open=make("button","secondary-button","Open");open.addEventListener("click",()=>openProject(p.id));row.append(open);list.append(row);});box.append(list);showContent(box);}
+function setView(view){currentView=view;nav.forEach(b=>b.classList.toggle("active",b.dataset.view===view));const home=view==="overview";title.innerHTML=home?"Welcome to<br><span>Nexora</span><i class='typing-cursor'></i>":({dashboard:"Your dashboard.",projects:"Your projects.",docs:"Build with Nexora.",settings:"Workspace settings.","api-keys":"Your API keys."}[view]||"Nexora");subtitle.textContent=home?"Access powerful AI models, manage your API keys, and bring your ideas to life — all in one place.":({dashboard:"Your Nexora workspace at a glance.",projects:"Manage and open your projects.",docs:"Guides and integration information.",settings:"Manage your workspace preferences.","api-keys":"API key management is coming in Day 3."}[view]||"");notice.hidden=!home;section.hidden=!home;grid.hidden=!home;const old=$("#viewPlaceholder");if(home){old?.remove();return;}if(view==="projects")renderProjectsPage();else if(view==="docs")renderDocs();else if(view==="settings")renderSettings();else{const box=panel(view==="api-keys"?"API key management":"Dashboard overview",view==="api-keys"?"Secure API key generation is scheduled for Day 3. No fake keys are shown.":"Account-backed usage and activity will appear after authentication and database setup.");showContent(box);}}
+function openDialog(){nameInput.value="";dialog.showModal();nameInput.focus();}
+$("#newProjectButton").addEventListener("click",openDialog);$("#emptyCreateButton").addEventListener("click",openDialog);
+form.addEventListener("submit",e=>{e.preventDefault();const name=nameInput.value.trim();if(!name)return;projects.push({id:Date.now(),name:name.slice(0,40)});persistProjects();renderProjects();dialog.close();});
+nav.forEach(b=>b.addEventListener("click",()=>{if(b.dataset.view)setView(b.dataset.view);$("#sidebar").classList.remove("open");}));
+$$(".quick-link").forEach(b=>b.addEventListener("click",()=>setView("docs")));
+$("#menuButton").addEventListener("click",()=>$("#sidebar").classList.toggle("open"));
+$("#themeToggle").addEventListener("click",()=>{const light=document.documentElement.classList.toggle("light-theme");try{localStorage.setItem("nexora-theme",light?"light":"dark");}catch{}$("#themeToggle").setAttribute("aria-pressed",String(light));$("#themeToggle").setAttribute("aria-label",light?"Switch to dark theme":"Switch to light theme");});
+try{if(localStorage.getItem("nexora-theme")==="light"){document.documentElement.classList.add("light-theme");$("#themeToggle").setAttribute("aria-pressed","true");$("#themeToggle").setAttribute("aria-label","Switch to dark theme");}}catch{}
+$("#profileButton").addEventListener("click",()=>setView("settings"));$("#notificationButton").addEventListener("click",()=>alert("You're all caught up. Nexora notifications will appear here."));
+const search=$(".search-box input");search.addEventListener("keydown",e=>{if(e.key==="Enter"){const q=search.value.trim().toLowerCase();if(!q)return;if("docs documentation examples".includes(q))setView("docs");else if("projects project".includes(q))setView("projects");else if("settings preferences theme".includes(q))setView("settings");else if("keys api".includes(q))setView("api-keys");else{const match=projects.find(p=>p.name.toLowerCase().includes(q));if(match)openProject(match.id);else alert("No matching Nexora page or project found.");}}});
+$("#sidebar .brand").addEventListener("click",e=>{e.preventDefault();setView("overview");});
+syncProfile();renderProjects();
+fetch("/api/health").then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{if(d.status!=="online")throw Error();$(".footer-status").lastChild.textContent=" Website online";}).catch(()=>{$(".footer-status").lastChild.textContent=" Connection unavailable";});
+})();

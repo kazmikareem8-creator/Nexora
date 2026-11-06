@@ -26,7 +26,7 @@ function openDialog(){nameInput.value="";dialog.showModal();nameInput.focus();}
 $("#newProjectButton").addEventListener("click",openDialog);$("#emptyCreateButton").addEventListener("click",openDialog);
 form.addEventListener("submit",async e=>{e.preventDefault();const name=nameInput.value.trim();if(!name)return;const submit=$("#createProjectSubmit");submit.disabled=true;try{await api("/api/projects",{method:"POST",body:JSON.stringify({name})});await loadProjects();dialog.close();if(currentView==="projects")renderProjectsPage();}catch(error){alert(error.message);}finally{submit.disabled=false;}});
 nav.forEach(b=>b.addEventListener("click",()=>{if(b.dataset.view)setView(b.dataset.view);$("#sidebar").classList.remove("open");}));
-$(".quick-link").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
+$$(".quick-link").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
 $("#menuButton").addEventListener("click",()=>$("#sidebar").classList.toggle("open"));
 $("#profileButton").addEventListener("click",()=>setView("settings"));$("#notificationButton").addEventListener("click",()=>alert("You're all caught up. Nexora notifications will appear here."));
 $("#sidebar .brand").addEventListener("click",e=>{e.preventDefault();setView("overview");});

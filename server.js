@@ -52,6 +52,8 @@ async function initializeDatabase() {
       )
     `);
     await pool.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''");
+    await pool.query(`CREATE TABLE IF NOT EXISTS api_usage (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, api_key_id BIGINT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE, capability VARCHAR(16) NOT NULL, endpoint VARCHAR(120) NOT NULL, model VARCHAR(120), status_code INTEGER NOT NULL, provider VARCHAR(80), duration_ms INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await pool.query("CREATE INDEX IF NOT EXISTS api_usage_user_created_idx ON api_usage(user_id, created_at DESC)");
     await pool.query(`
       CREATE TABLE IF NOT EXISTS api_keys (
         id BIGSERIAL PRIMARY KEY,
@@ -294,6 +296,9 @@ app.post("/api/keys/:id/revoke", requireDatabase, requireUser, async (req,res)=>
   catch(e){console.error("API key revoke failed:",e.message);res.status(500).json({error:"Could not revoke API key."});}
 });
 
+require("./gateway")(app, pool, requireDatabase);
+
+app.use("/v1", (_req,res)=>res.status(404).json({error:{code:"not_found",message:"Nexora API route not found."}}));
 app.use("/api", (_req,res)=>res.status(404).json({error:"API route not found."}));
 
 app.get("*", (_req, res) => {

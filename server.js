@@ -51,6 +51,7 @@ async function initializeDatabase() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    await pool.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''");
     await pool.query(`
       CREATE TABLE IF NOT EXISTS api_keys (
         id BIGSERIAL PRIMARY KEY,
@@ -241,15 +242,25 @@ app.get("/api/projects", requireDatabase, requireUser, async (req,res)=>{
 });
 app.post("/api/projects", requireDatabase, requireUser, async (req,res)=>{
   const name=typeof req.body.name==="string"?req.body.name.trim().slice(0,80):"";
+  const description=typeof req.body.description==="string"?req.body.description.trim().slice(0,500):"";
   if(!name) return res.status(400).json({error:"Enter a project name."});
-  try {const r=await pool.query("INSERT INTO projects(user_id,name) VALUES($1,$2) RETURNING id,name,created_at",[req.session.userId,name]);res.status(201).json({project:r.rows[0]});}
+  try {const r=await pool.query("INSERT INTO projects(user_id,name,description) VALUES($1,$2,$3) RETURNING id,name,description,created_at",[req.session.userId,name,description]);res.status(201).json({project:r.rows[0]});}
   catch(e){console.error("Project create failed:",e.message);res.status(500).json({error:"Could not create project."});}
+});
+app.get("/api/projects/:id", requireDatabase, requireUser, async (req,res)=>{
+  if(!validId(req.params.id)) return res.status(400).json({error:"Invalid project ID."});
+  try {const r=await pool.query("SELECT p.id,p.name,p.description,p.created_at,COUNT(k.id)::int AS key_count FROM projects p LEFT JOIN api_keys k ON k.project_id=p.id AND k.user_id=p.user_id WHERE p.id=$1 AND p.user_id=$2 GROUP BY p.id",[req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Project not found."});res.json({project:r.rows[0]});}
+  catch(e){console.error("Project detail failed:",e.message);res.status(500).json({error:"Could not load project."});}
 });
 app.patch("/api/projects/:id", requireDatabase, requireUser, async (req,res)=>{
   if(!validId(req.params.id)) return res.status(400).json({error:"Invalid project ID."});
-  const name=typeof req.body.name==="string"?req.body.name.trim().slice(0,80):"";
-  if(!name) return res.status(400).json({error:"Enter a project name."});
-  try {const r=await pool.query("UPDATE projects SET name=$1 WHERE id=$2 AND user_id=$3 RETURNING id,name,created_at",[name,req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Project not found."});res.json({project:r.rows[0]});}
+  const hasName=Object.prototype.hasOwnProperty.call(req.body,"name"),hasDescription=Object.prototype.hasOwnProperty.call(req.body,"description");
+  if(!hasName&&!hasDescription)return res.status(400).json({error:"No project changes were supplied."});
+  const name=hasName&&typeof req.body.name==="string"?req.body.name.trim().slice(0,80):null;
+  const description=hasDescription&&typeof req.body.description==="string"?req.body.description.trim().slice(0,500):null;
+  if(hasName&&!name)return res.status(400).json({error:"Project name cannot be empty."});
+  if((hasName&&typeof req.body.name!=="string")||(hasDescription&&typeof req.body.description!=="string"))return res.status(400).json({error:"Invalid project details."});
+  try {const r=await pool.query("UPDATE projects SET name=COALESCE($1,name),description=COALESCE($2,description) WHERE id=$3 AND user_id=$4 RETURNING id,name,description,created_at",[name,description,req.params.id,req.session.userId]);if(!r.rowCount)return res.status(404).json({error:"Project not found."});res.json({project:r.rows[0]});}
   catch(e){console.error("Project update failed:",e.message);res.status(500).json({error:"Could not update project."});}
 });
 app.delete("/api/projects/:id", requireDatabase, requireUser, async (req,res)=>{

@@ -52,8 +52,6 @@ async function initializeDatabase() {
       )
     `);
     await pool.query("ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''");
-    await pool.query(`CREATE TABLE IF NOT EXISTS api_usage (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, api_key_id BIGINT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE, capability VARCHAR(16) NOT NULL, endpoint VARCHAR(120) NOT NULL, model VARCHAR(120), status_code INTEGER NOT NULL, provider VARCHAR(80), duration_ms INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
-    await pool.query("CREATE INDEX IF NOT EXISTS api_usage_user_created_idx ON api_usage(user_id, created_at DESC)");
     await pool.query(`
       CREATE TABLE IF NOT EXISTS api_keys (
         id BIGSERIAL PRIMARY KEY,
@@ -67,6 +65,8 @@ async function initializeDatabase() {
         revoked_at TIMESTAMPTZ
       )
     `);
+    await pool.query(`CREATE TABLE IF NOT EXISTS api_usage (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, api_key_id BIGINT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE, capability VARCHAR(16) NOT NULL, endpoint VARCHAR(120) NOT NULL, model VARCHAR(120), status_code INTEGER NOT NULL, provider VARCHAR(80), duration_ms INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await pool.query("CREATE INDEX IF NOT EXISTS api_usage_user_created_idx ON api_usage(user_id, created_at DESC)");
     databaseReady = true;
     databaseError = null;
     console.log("Nexora database initialized");

@@ -28,7 +28,7 @@ form.addEventListener("submit",async e=>{e.preventDefault();const name=nameInput
 nav.forEach(b=>b.addEventListener("click",()=>{if(b.dataset.view)setView(b.dataset.view);$("#sidebar").classList.remove("open");}));
 $$(".quick-link").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
 $("#menuButton").addEventListener("click",()=>$("#sidebar").classList.toggle("open"));
-$("#profileButton").addEventListener("click",()=>setView("settings"));$("#notificationButton").addEventListener("click",()=>alert("You're all caught up. Nexora notifications will appear here."));
+$("#profileButton").addEventListener("click",()=>setView("settings"));
 $("#sidebar .brand").addEventListener("click",e=>{e.preventDefault();setView("overview");});
 window.addEventListener("nexora:auth-changed",()=>loadProjects());
 syncProfile();loadProjects();

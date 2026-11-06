@@ -32,7 +32,7 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
     } catch (error) { console.error("Usage recording failed:", error.message); }
   }
 
-  const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const geminiModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
   const geminiKey = process.env.GEMINI_API_KEY;
 
   app.get("/v1/models", requireDatabase, authenticate, async (_req, res) => {

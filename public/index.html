@@ -1,102 +1,14 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#090b09">
-  <meta name="description" content="Nexora — one clean interface for your AI projects and APIs.">
-  <title>Nexora — AI infrastructure, simplified</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <div class="app-shell">
-    <aside class="sidebar" id="sidebar">
-      <a class="brand" href="#" aria-label="Nexora home">
-        <span class="brand-mark">N</span><span>NEXORA</span>
-      </a>
-      <div class="workspace-switch">
-        <span class="workspace-icon">N</span>
-        <span class="workspace-copy"><strong>Personal workspace</strong><small>Free workspace</small></span>
-        <span class="chevron">⌄</span>
-      </div>
-      <p class="nav-label">WORKSPACE</p>
-      <nav class="nav-list" aria-label="Main navigation">
-        <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span> Overview</button>
-        <button class="nav-item" data-view="projects"><span class="nav-icon">▦</span> Projects</button>
-        <button class="nav-item" data-view="api-keys"><span class="nav-icon">⌘</span> API keys</button>
-        <button class="nav-item" data-view="usage"><span class="nav-icon">▥</span> Usage</button>
-        <button class="nav-item" data-view="logs"><span class="nav-icon">≋</span> Logs</button>
-      </nav>
-      <p class="nav-label nav-label-spaced">DEVELOP</p>
-      <nav class="nav-list">
-        <button class="nav-item" data-view="models"><span class="nav-icon">✳</span> Models <span class="soon">SOON</span></button>
-        <button class="nav-item" data-view="docs"><span class="nav-icon">▤</span> Documentation</button>
-      </nav>
-      <div class="sidebar-bottom">
-        <div class="plan-card"><span class="plan-dot"></span><div><strong>Free plan</strong><small>Foundation preview</small></div><span class="plan-arrow">↗</span></div>
-        <button class="profile-button"><span class="avatar">K</span><span><strong>Your workspace</strong><small>Account setup later</small></span><span class="chevron">⌄</span></button>
-      </div>
-    </aside>
-
-    <main class="main-content">
-      <header class="topbar">
-        <button class="mobile-menu" id="menuButton" aria-label="Open navigation">☰</button>
-        <div class="breadcrumbs"><span>Workspace</span><b>/</b><strong id="crumbTitle">Overview</strong></div>
-        <div class="topbar-right"><span class="system-status"><i></i> Platform preview</span><button class="help-button" data-view="docs">? <span>Help</span></button><span class="avatar top-avatar">K</span></div>
-      </header>
-
-      <section class="page-wrap">
-        <div class="welcome-row">
-          <div><div class="eyebrow"><span class="eyebrow-line"></span> YOUR AI WORKSPACE</div><h1 id="pageTitle">Build with <span>intelligence.</span></h1><p id="pageSubtitle">One place to manage your AI projects, keys and usage.</p></div>
-          <button class="primary-button" id="newProjectButton"><span>＋</span> New project</button>
-        </div>
-
-        <div class="notice"><span class="notice-icon">✦</span><div><strong>Nexora is taking shape</strong><p>This is the Day 1 interface foundation. Account security, real API keys and live model routing are not connected yet.</p></div><span class="notice-tag">PREVIEW</span></div>
-
-        <div class="section-heading"><div><h2>Workspace overview</h2><p>A quick look at your Nexora workspace.</p></div><span class="date-chip"><span>◷</span> Just getting started</span></div>
-
-        <div class="stats-grid">
-          <article class="stat-card"><div class="stat-top"><span>Projects</span><span class="stat-icon">▦</span></div><div class="stat-value" id="projectCount">0</div><div class="stat-foot"><span class="muted-dot"></span> Your connected projects</div></article>
-          <article class="stat-card"><div class="stat-top"><span>API requests</span><span class="stat-icon">⌁</span></div><div class="stat-value">—</div><div class="stat-foot">Available after gateway setup</div></article>
-          <article class="stat-card"><div class="stat-top"><span>Tokens used</span><span class="stat-icon">✳</span></div><div class="stat-value">—</div><div class="stat-foot">Usage tracking coming later</div></article>
-          <article class="stat-card accent-card"><div class="stat-top"><span>Platform status</span><span class="live-pill"><i></i> ONLINE</span></div><div class="stat-value status-value">Foundation</div><div class="stat-foot">Website server is responding</div></article>
-        </div>
-
-        <div class="content-grid">
-          <section class="panel projects-panel">
-            <div class="panel-heading"><div><h3>Your projects</h3><p>Keep each app and integration organised.</p></div><button class="text-button" data-view="projects">View all <span>↗</span></button></div>
-            <div class="empty-state" id="emptyProjects"><div class="empty-art"><span class="empty-square">▦</span><span class="empty-plus">＋</span></div><h4>Your workspace starts here</h4><p>Create a project to organise the apps that will use Nexora.</p><button class="outline-button" id="emptyCreateButton">＋ Create your first project</button></div>
-            <div class="project-list" id="projectList"></div>
-          </section>
-          <section class="panel quick-panel">
-            <div class="panel-heading"><div><h3>Quick start</h3><p>Your next steps with Nexora.</p></div><span class="sparkle">✦</span></div>
-            <div class="quick-step"><span class="step-number">01</span><div><strong>Create a project</strong><p>Give your app its own workspace.</p></div><span class="step-check">○</span></div>
-            <div class="quick-step"><span class="step-number">02</span><div><strong>Generate an API key</strong><p>Secure credentials are in development.</p></div><span class="step-check pending">○</span></div>
-            <div class="quick-step"><span class="step-number">03</span><div><strong>Make your first request</strong><p>Connect a real model provider.</p></div><span class="step-check pending">○</span></div>
-            <button class="docs-link" data-view="docs">Explore the developer guide <span>→</span></button>
-          </section>
-        </div>
-
-        <section class="bottom-panel">
-          <div class="bottom-copy"><span class="bottom-icon">⌘</span><div><h3>One API. A world of possibilities.</h3><p>Nexora is being built as an independent gateway for connecting AI models through one consistent interface.</p></div></div>
-          <span class="bottom-badge">BUILT FOR BUILDERS</span>
-        </section>
-        <footer><span>© 2026 Nexora</span><span>Independent · Free-first · Developer-focused</span><span class="footer-status"><i></i> Website online</span></footer>
-      </section>
-    </main>
-  </div>
-
-  <dialog id="projectDialog" class="project-dialog">
-    <form method="dialog" id="projectForm">
-      <div class="dialog-top"><span class="dialog-mark">N</span><button class="close-button" value="cancel" aria-label="Close">×</button></div>
-      <p class="eyebrow">NEW WORKSPACE PROJECT</p><h2>Create a project</h2><p class="dialog-description">Give your app or integration a name. This creates a local preview item only; account-backed project storage comes later.</p>
-      <label for="projectName">Project name</label><input id="projectName" name="projectName" maxlength="40" placeholder="e.g. My AI app" required>
-      <div class="dialog-actions"><button class="outline-button" value="cancel">Cancel</button><button class="primary-button" id="createProjectSubmit" value="default">Create project <span>→</span></button></div>
-    </form>
-  </dialog>
-  <script src="/app.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#030503"><meta name="description" content="Nexora — independent, free-first AI API workspace."><title>Nexora — Build. Integrate. Innovate.</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/styles.css"></head>
+<body><div class="app-shell"><aside class="sidebar" id="sidebar"><a class="brand" href="#"><span class="brand-mark">N</span><span>Nexora</span></a><nav class="nav-list" aria-label="Main navigation"><button class="nav-item active" data-view="overview"><span class="nav-icon">⌂</span>Home</button><button class="nav-item" data-view="dashboard"><span class="nav-icon">▦</span>Dashboard</button><button class="nav-item" data-view="api-keys"><span class="nav-icon">⚿</span>API Keys</button><button class="nav-item" data-view="projects"><span class="nav-icon">▱</span>Projects</button><button class="nav-item" data-view="docs"><span class="nav-icon">▤</span>Docs</button><button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>Settings</button></nav><div class="sidebar-bottom"><div class="plan-card"><span class="crown">♛</span><strong>Free workspace</strong><small>Independent. Free-first.</small></div><div class="theme-row"><span>☼</span><span class="theme-toggle"><i></i></span><span>☾</span></div></div></aside>
+<main class="main-content"><header class="topbar"><button class="mobile-menu" id="menuButton" aria-label="Open navigation">☰</button><label class="search-box"><span>⌕</span><input type="search" placeholder="Search Nexora..." aria-label="Search Nexora"></label><div class="topbar-right"><button class="bell" aria-label="Notifications">♧</button><span class="avatar top-avatar">K</span></div></header>
+<section class="page-wrap"><div class="welcome-row"><div class="hero-copy"><div class="eyebrow">YOUR AI API WORKSPACE</div><h1 id="pageTitle">Welcome to<br><span>Nexora</span><i class="typing-cursor"></i></h1><h2>The next-gen AI API platform.<br><em>Build. Integrate. Innovate.</em></h2><p id="pageSubtitle">Access powerful AI models, manage your API keys,<br class="desktop-break"> and bring your ideas to life — all in one place.</p><div class="hero-actions"><button class="primary-button" id="newProjectButton"><span>✦</span>Get Started <b>→</b></button><button class="secondary-button" data-view="docs"><span>▤</span>View Documentation</button></div></div>
+<div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="logo-glow"><span>N</span></div><div class="wave wave-one"></div><div class="wave wave-two"></div><div class="spark spark-one">✦</div><div class="spark spark-two">·</div></div>
+<aside class="creator-card"><div class="creator-head"><span class="creator-avatar">●</span><div><strong>Hello, Creator! 👑</strong><small>Welcome back to Nexora.</small></div></div><div class="creator-divider"></div><h3><span>▥</span>Your Stats</h3><div class="mini-stats"><div><strong id="heroProjectCount">0</strong><span>Projects</span></div><div><strong>0</strong><span>API Calls<br>(Today)</span></div><div><strong>0</strong><span>API Keys</span></div></div><p class="preview-note">Preview mode · Live API features are still being built.</p></aside></div>
+<div class="notice"><span class="notice-icon">✦</span><div><strong>Nexora foundation preview</strong><p>Projects are currently saved only in this browser. API keys and live model access are not connected yet.</p></div><span class="notice-tag">DAY 1</span></div>
+<div class="section-heading"><div><h2>Get started with Nexora</h2><p>Your tools for building with AI, all in one place.</p></div></div>
+<div class="content-grid"><section class="panel action-panel"><div class="panel-heading"><div><h3><span class="panel-symbol">ϟ</span>Your API Keys</h3><p>Generate your first API key to start using Nexora's AI services.</p></div><span class="illustration key-art">⚿</span></div><button class="primary-button" data-view="api-keys">Generate API Key <b>→</b></button></section>
+<section class="panel action-panel"><div class="panel-heading"><div><h3><span class="panel-symbol">▰</span>Your Projects</h3><p>Create your first project to organise your work.</p></div><span class="illustration folder-art">▱</span></div><button class="primary-button" id="emptyCreateButton">Create Project <b>→</b></button><div class="project-list" id="projectList"></div><div class="empty-state" id="emptyProjects"><span>＋</span><small>No projects yet</small></div></section>
+<section class="panel quick-panel"><div class="panel-heading"><h3><span class="panel-symbol">▤</span>Quick Links</h3></div><button class="quick-link" data-view="docs">API Documentation <b>›</b></button><button class="quick-link" data-view="docs">Example Code <b>›</b></button><button class="quick-link" data-view="docs">Support <b>›</b></button></section></div>
+<footer><span class="footer-brand"><b>N</b>Nexora</span><span>Powering the next generation of AI innovation.</span><span class="footer-status"><i></i>Website online</span></footer></section></main></div>
+<dialog id="projectDialog" class="project-dialog"><form method="dialog" id="projectForm"><div class="dialog-top"><span class="dialog-mark">N</span><button class="close-button" value="cancel" aria-label="Close">×</button></div><p class="eyebrow">NEW PROJECT</p><h2>Create a project</h2><p class="dialog-description">Give your app or integration a name. This currently creates a browser-only preview project.</p><label for="projectName">Project name</label><input id="projectName" name="projectName" maxlength="40" placeholder="e.g. My AI app" required><div class="dialog-actions"><button class="secondary-button" value="cancel">Cancel</button><button class="primary-button" id="createProjectSubmit" value="default">Create project <span>→</span></button></div></form></dialog><script src="/app.js"></script></body></html>

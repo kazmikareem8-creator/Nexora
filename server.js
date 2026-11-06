@@ -258,18 +258,22 @@ app.delete("/api/projects/:id", requireDatabase, requireUser, async (req,res)=>{
   catch(e){console.error("Project delete failed:",e.message);res.status(500).json({error:"Could not delete project."});}
 });
 app.get("/api/keys", requireDatabase, requireUser, async (req,res)=>{
-  try {const r=await pool.query("SELECT id,name,key_prefix,created_at,last_used_at,revoked_at FROM api_keys WHERE user_id=$1 ORDER BY created_at DESC",[req.session.userId]);res.json({keys:r.rows});}
+  try {const r=await pool.query("SELECT k.id,k.name,k.key_prefix,k.project_id,p.name AS project_name,k.created_at,k.last_used_at,k.revoked_at FROM api_keys k LEFT JOIN projects p ON p.id=k.project_id WHERE k.user_id=$1 ORDER BY k.created_at DESC",[req.session.userId]);res.json({keys:r.rows});}
   catch(e){console.error("API keys load failed:",e.message);res.status(500).json({error:"Could not load API keys."});}
 });
 app.post("/api/keys", requireDatabase, requireUser, async (req,res)=>{
   const name=typeof req.body.name==="string"?req.body.name.trim().slice(0,80):"";
+  const projectId=typeof req.body.projectId==="string"?req.body.projectId:"";
   if(!name)return res.status(400).json({error:"Enter a name for this API key."});
+  if(!validId(projectId))return res.status(400).json({error:"Choose a valid project for this API key."});
   try {
+    const project=await pool.query("SELECT id FROM projects WHERE id=$1 AND user_id=$2",[projectId,req.session.userId]);
+    if(!project.rowCount)return res.status(404).json({error:"Project not found in your account."});
     const crypto=require("crypto");
     const raw="nx_live_"+crypto.randomBytes(32).toString("hex");
     const hash=crypto.createHash("sha256").update(raw).digest("hex");
     const prefix=raw.slice(0,16);
-    const r=await pool.query("INSERT INTO api_keys(user_id,name,key_prefix,key_hash) VALUES($1,$2,$3,$4) RETURNING id,name,key_prefix,created_at",[req.session.userId,name,prefix,hash]);
+    const r=await pool.query("INSERT INTO api_keys(user_id,project_id,name,key_prefix,key_hash) VALUES($1,$2,$3,$4,$5) RETURNING id,name,project_id,key_prefix,created_at",[req.session.userId,projectId,name,prefix,hash]);
     res.status(201).json({key:r.rows[0],secret:raw});
   } catch(e){console.error("API key create failed:",e.message);res.status(500).json({error:"Could not create API key."});}
 });

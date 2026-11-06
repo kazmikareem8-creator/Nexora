@@ -35,13 +35,12 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
   const geminiModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
   // Multiple server-side keys allow fallback when one key is rate-limited or unavailable.
   const geminiKeys = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(Boolean);
-  // Independent Cloudflare Workers AI fallback (credentials stay on the server).
-  const cfAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const cfApiToken = process.env.CLOUDFLARE_API_TOKEN;
-  const cfModel = process.env.CLOUDFLARE_TEXT_MODEL || "@cf/meta/llama-3.1-8b-instruct";
+  // Independent Groq fallback (credential stays on the server).
+  const groqApiKey = process.env.GROQ_API_KEY;
+  const groqModel = process.env.GROQ_TEXT_MODEL || "llama-3.3-70b-versatile";
 
   app.get("/v1/models", requireDatabase, authenticate, async (_req, res) => {
-    const textConfigured = geminiKeys.length > 0 || Boolean(cfAccountId && cfApiToken);
+    const textConfigured = geminiKeys.length > 0 || Boolean(groqApiKey);
     const data = textConfigured
       ? [{ id: "nexora-text", object: "model", owned_by: "nexora", capabilities: ["text"] }]
       : [];
@@ -107,40 +106,44 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
         console.error("Gemini provider attempt failed:", timedOut ? "timeout after 25 seconds" : error.name + " " + error.message);
       }
     }
-    // Try an independent provider after Gemini keys fail.
-    if (cfAccountId && cfApiToken) {
+    // Try an independent Groq provider after Gemini keys fail.
+    if (groqApiKey) {
       try {
-        const cfMessages = validMessages.map(m => ({ role: m.role, content: m.content }));
-        if (!cfMessages.length && typeof body.prompt === "string" && body.prompt.trim()) {
-          cfMessages.push({ role: "user", content: body.prompt.trim() });
+        const groqMessages = validMessages.map(m => ({ role: m.role, content: m.content }));
+        if (!groqMessages.length && typeof body.prompt === "string" && body.prompt.trim()) {
+          groqMessages.push({ role: "user", content: body.prompt.trim() });
         }
-        const cfResponse = await fetch(
-          "https://api.cloudflare.com/client/v4/accounts/" + encodeURIComponent(cfAccountId) + "/ai/run/" + encodeURIComponent(cfModel),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfApiToken },
-            body: JSON.stringify({ messages: cfMessages }),
-            signal: AbortSignal.timeout(25000)
-          }
-        );
-        const cfResult = await cfResponse.json().catch(() => ({}));
-        const cfAnswer = cfResult && cfResult.result && typeof cfResult.result.response === "string"
-          ? cfResult.result.response.trim() : "";
-        if (cfResponse.ok && cfAnswer) {
-          await record(req, "text", "/v1/chat/completions", cfModel, 200, "cloudflare", started);
+        const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + groqApiKey },
+          body: JSON.stringify({
+            model: groqModel,
+            messages: groqMessages,
+            ...(Number.isFinite(body.temperature) ? { temperature: Math.max(0, Math.min(2, body.temperature)) } : {}),
+            ...(Number.isInteger(body.max_tokens) ? { max_tokens: Math.max(1, Math.min(8192, body.max_tokens)) } : {})
+          }),
+          signal: AbortSignal.timeout(25000)
+        });
+        const groqResult = await groqResponse.json().catch(() => ({}));
+        const groqAnswer = groqResult && groqResult.choices && groqResult.choices[0] &&
+          groqResult.choices[0].message && typeof groqResult.choices[0].message.content === "string"
+          ? groqResult.choices[0].message.content.trim() : "";
+        if (groqResponse.ok && groqAnswer) {
+          await record(req, "text", "/v1/chat/completions", groqModel, 200, "groq", started);
           return res.json({
             id: "nexora-" + crypto.randomUUID(), object: "chat.completion",
             created: Math.floor(Date.now() / 1000),
             model: typeof body.model === "string" ? body.model : "nexora-text",
-            choices: [{ index: 0, message: { role: "assistant", content: cfAnswer }, finish_reason: "stop" }],
-            usage: { prompt_tokens: null, completion_tokens: null, total_tokens: null }
+            choices: [{ index: 0, message: { role: "assistant", content: groqAnswer }, finish_reason: "stop" }],
+            usage: groqResult.usage || { prompt_tokens: null, completion_tokens: null, total_tokens: null }
           });
         }
-        console.error("Cloudflare fallback failed:", cfResponse.status, cfResult && cfResult.errors ? JSON.stringify(cfResult.errors) : "Empty response");
-        lastFailure = { kind: cfResponse.status === 429 ? "rate_limit" : "http", status: cfResponse.status || 502 };
+        console.error("Groq fallback failed:", groqResponse.status,
+          groqResult && groqResult.error ? JSON.stringify(groqResult.error) : "Empty response");
+        lastFailure = { kind: groqResponse.status === 429 ? "rate_limit" : "http", status: groqResponse.status || 502 };
       } catch (error) {
         const timedOut = error && (error.name === "TimeoutError" || error.name === "AbortError");
-        console.error("Cloudflare fallback failed:", timedOut ? "timeout after 25 seconds" : error.name + " " + error.message);
+        console.error("Groq fallback failed:", timedOut ? "timeout after 25 seconds" : error.name + " " + error.message);
         lastFailure = { kind: timedOut ? "timeout" : "network", status: timedOut ? 504 : 503 };
       }
     }

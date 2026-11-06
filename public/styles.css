@@ -46,3 +46,43 @@
 
 /* Animated sun/moon theme switch */
 .theme-toggle{justify-content:flex-start;transition:background .35s ease,box-shadow .35s ease}.theme-toggle i{display:grid;place-items:center;flex:0 0 23px;transform:translateX(0) rotate(-35deg);transition:transform .42s cubic-bezier(.2,.8,.2,1),background .3s ease}.theme-toggle i::before{content:"☾";font-style:normal;font-size:15px;color:#40512d;line-height:1}.light-theme .theme-toggle{background:#d9e8c8;box-shadow:0 0 14px #9abf6a55}.light-theme .theme-toggle i{transform:translateX(29px) rotate(35deg)}.light-theme .theme-toggle i::before{content:"☀";color:#9a6b00}
+
+
+/* Light theme contrast fix */
+.light-theme body{background:#f4f8ef;color:#182016}
+.light-theme .sidebar{background:#f8fbf4;border-color:#dce5d5}
+.light-theme .brand,.light-theme .brand-mark{color:#568d00;text-shadow:none}
+.light-theme .nav-item{color:#42503b}
+.light-theme .nav-item.active,.light-theme .nav-item:hover{background:#e7f2dc;color:#26351c}
+.light-theme .topbar{background:#fbfdf9;border-color:#dce5d5}
+.light-theme .search-box{background:#f0f5eb;border-color:#d6e0ce;box-shadow:none}
+.light-theme .search-box input{color:#182016}
+.light-theme .bell,.light-theme .mobile-menu{color:#405039}
+.light-theme .hero-copy h2{color:#26351c}
+.light-theme .hero-copy p,.light-theme .section-heading p{color:#596653}
+.light-theme .creator-card{background:linear-gradient(145deg,#fff,#f3f8ed);border-color:#dce5d5;box-shadow:0 12px 35px #536b3a12}
+.light-theme .creator-head strong,.light-theme .creator-card h3{color:#26351c}
+.light-theme .creator-divider{background:#dce5d5}
+.light-theme .mini-stats div{background:#f4f8ef;border-color:#dce5d5}
+.light-theme .mini-stats span{color:#53614c}
+.light-theme .preview-note{color:#778270}
+.light-theme .notice{background:linear-gradient(90deg,#edf7e4,#f8fcf4);border-color:#d1e2c3;color:#26351c}
+.light-theme .notice p{color:#596653}
+.light-theme .panel{background:linear-gradient(145deg,#fff,#f6f9f2);border-color:#dce5d5}
+.light-theme .panel-heading h3{color:#26351c}
+.light-theme .panel-heading p{color:#596653}
+.light-theme .quick-link{color:#34432d;border-color:#e1e8da}
+.light-theme .quick-link b,.light-theme .panel-symbol,.light-theme .illustration{color:#619800;filter:none}
+.light-theme .empty-state{color:#66735f}
+.light-theme .project-row,.light-theme .project-page-row{background:#f7faf3;color:#26351c;border-color:#dce5d5}
+.light-theme footer{border-color:#dce5d5;color:#66735f}
+.light-theme .footer-brand{color:#5d9400}
+.light-theme .project-dialog{background:#fff;color:#182016;border-color:#d4e2c8}
+.light-theme .project-dialog input{background:#f5f8f1;color:#182016;border-color:#d4e2c8}
+.light-theme .dialog-description,.light-theme .project-meta{color:#66735f}
+.light-theme .view-placeholder{background:#fff;border-color:#dce5d5}
+.light-theme .settings-form label{color:#405039}
+.light-theme .settings-form input{background:#f7faf3;color:#182016;border-color:#d4e2c8}
+.light-theme .secondary-button{background:#f2f6ed;color:#23301d;border-color:#cbd8c1}
+.light-theme .primary-button{background:#8bcf36;border-color:#8bcf36;color:#17240b;box-shadow:0 4px 16px #70a92b30}
+.light-theme .primary-button:hover{background:#a2e35a;border-color:#a2e35a}

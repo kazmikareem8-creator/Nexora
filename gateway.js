@@ -46,6 +46,9 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
 
   app.post("/v1/chat/completions", requireDatabase, authenticate, async (req, res) => {
     const started = Date.now();
+    const requestId = "nxreq-" + crypto.randomUUID();
+    res.setHeader("X-Nexora-Request-Id", requestId);
+    console.log("Nexora text request started:", requestId);
     const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const validMessages = messages.filter(m => m && ["system", "user", "assistant"].includes(m.role) && typeof m.content === "string" && m.content.trim());
@@ -79,7 +82,7 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
           lastFailure = { kind: response.status === 429 ? "rate_limit" : "http", status: response.status };
-          console.error("Gemini provider attempt failed:", response.status, result?.error?.message || "Unknown provider error");
+          console.error("Gemini provider attempt failed:", requestId, response.status, result?.error?.message || "Unknown provider error");
           if (response.status === 429 || response.status >= 500) continue;
           break;
         }
@@ -90,11 +93,12 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
       } catch (error) {
         const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
         lastFailure = { kind: timedOut ? "timeout" : "network", status: timedOut ? 504 : 503 };
-        console.error("Gemini provider attempt failed:", timedOut ? "timeout after 20 seconds" : error.name + " " + error.message);
+        console.error("Gemini provider attempt failed:", requestId, timedOut ? "timeout after 20 seconds" : error.name + " " + error.message);
       }
     }
 
     if (groqApiKey) {
+      console.log("Nexora trying Groq fallback:", requestId);
       try {
         const groqMessages = validMessages.map(m => ({ role: m.role, content: m.content }));
         if (!groqMessages.length && typeof body.prompt === "string" && body.prompt.trim()) groqMessages.push({ role: "user", content: body.prompt.trim() });
@@ -107,13 +111,14 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
         const groqAnswer = groqResult?.choices?.[0]?.message?.content;
         if (groqResponse.ok && typeof groqAnswer === "string" && groqAnswer.trim()) {
           await record(req, "text", "/v1/chat/completions", groqModel, 200, "groq", started);
+          console.log("Nexora text request succeeded:", requestId, "provider=groq");
           return res.json({ id: "nexora-" + crypto.randomUUID(), object: "chat.completion", created: Math.floor(Date.now() / 1000), model: typeof body.model === "string" ? body.model : "nexora-text", choices: [{ index: 0, message: { role: "assistant", content: groqAnswer.trim() }, finish_reason: "stop" }], usage: groqResult.usage || { prompt_tokens: null, completion_tokens: null, total_tokens: null } });
         }
-        console.error("Groq fallback failed:", groqResponse.status, groqResult?.error ? JSON.stringify(groqResult.error) : "Empty response");
+        console.error("Groq fallback failed:", requestId, groqResponse.status, groqResult?.error ? JSON.stringify(groqResult.error) : "Empty response");
         lastFailure = { kind: groqResponse.status === 429 ? "rate_limit" : "http", status: groqResponse.status || 502 };
       } catch (error) {
         const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
-        console.error("Groq fallback failed:", timedOut ? "timeout after 20 seconds" : error.name + " " + error.message);
+        console.error("Groq fallback failed:", requestId, timedOut ? "timeout after 20 seconds" : error.name + " " + error.message);
         lastFailure = { kind: timedOut ? "timeout" : "network", status: timedOut ? 504 : 503 };
       }
     }
@@ -126,7 +131,8 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
       kind === "network" ? "Nexora could not reach the text provider. Check provider connectivity and try again." :
       "The text provider rejected the request. Check the configured model and API key.";
     await record(req, "text", "/v1/chat/completions", "nexora-text", status, "gateway", started);
-    return res.status(status).json({ error: { code, message } });
+    console.error("Nexora text request failed:", requestId, code);
+    return res.status(status).json({ error: { code, message, request_id: requestId } });
   });
 
   for (const route of [{ path: "/v1/images/generations", capability: "image" }, { path: "/v1/videos/generations", capability: "video" }]) {

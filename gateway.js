@@ -139,16 +139,79 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
     return res.status(status).json({ error: { code, message, request_id: requestId } });
   });
 
-  for (const route of [{ path: "/v1/images/generations", capability: "image" }, { path: "/v1/videos/generations", capability: "video" }]) {
-    app.post(route.path, requireDatabase, authenticate, async (req, res) => {
-      const started = Date.now();
-      const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
-      if (typeof body.prompt !== "string" || !body.prompt.trim()) {
-        await record(req, route.capability, route.path, body.model, 400, null, started);
-        return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt." } });
+  // Image generation uses an OpenAI-compatible upstream provider.
+  // Configure IMAGE_API_BASE_URL, IMAGE_API_KEY and IMAGE_MODEL on the server.
+  const imageBaseUrl = (process.env.IMAGE_API_BASE_URL || "").replace(/\\/+$/, "");
+  const imageApiKey = process.env.IMAGE_API_KEY || "";
+  const imageModel = process.env.IMAGE_MODEL || "";
+  const imageConfigured = Boolean(imageBaseUrl && imageApiKey && imageModel);
+
+  app.post("/v1/images/generations", requireDatabase, authenticate, async (req, res) => {
+    const started = Date.now();
+    const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+    const count = body.n === undefined ? 1 : Number(body.n);
+    const size = body.size === undefined ? "1024x1024" : body.size;
+    if (!prompt || prompt.length > 4000 || !Number.isInteger(count) || count < 1 || count > 4 ||
+        typeof size !== "string" || !/^\\d{2,4}x\\d{2,4}$/.test(size)) {
+      await record(req, "image", "/v1/images/generations", body.model, 400, null, started);
+      return res.status(400).json({ error: { code: "invalid_request", message: "Provide a prompt (up to 4,000 characters), n between 1 and 4, and a size such as 1024x1024." } });
+    }
+    if (!imageConfigured) {
+      await record(req, "image", "/v1/images/generations", body.model, 503, null, started);
+      return res.status(503).json({ error: { code: "provider_not_configured", message: "Image generation is not configured. Set IMAGE_API_BASE_URL, IMAGE_API_KEY and IMAGE_MODEL on the Nexora server." } });
+    }
+    try {
+      const upstream = await fetch(imageBaseUrl + "/images/generations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + imageApiKey },
+        body: JSON.stringify({
+          model: imageModel,
+          prompt,
+          n: count,
+          size,
+          ...(body.response_format === "b64_json" ? { response_format: "b64_json" } : { response_format: "url" })
+        }),
+        signal: AbortSignal.timeout(90000)
+      });
+      const result = await upstream.json().catch(() => ({}));
+      if (!upstream.ok) {
+        const status = upstream.status === 429 ? 429 : upstream.status >= 500 ? 502 : 400;
+        await record(req, "image", "/v1/images/generations", imageModel, status, "openai-compatible", started);
+        console.error("Nexora image provider rejected request:", upstream.status, result?.error?.message || "Unknown provider error");
+        return res.status(status).json({ error: { code: upstream.status === 429 ? "provider_rate_limited" : "provider_error", message: "The configured image provider could not complete this request. Check its model access, quota and configuration." } });
       }
-      await record(req, route.capability, route.path, body.model, 503, null, started);
-      return res.status(503).json({ error: { code: "provider_not_configured", message: "No genuinely free provider is connected for this capability yet." } });
-    });
-  }
+      if (!Array.isArray(result.data) || !result.data.length ||
+          result.data.some(item => !item || (typeof item.url !== "string" && typeof item.b64_json !== "string"))) {
+        await record(req, "image", "/v1/images/generations", imageModel, 502, "openai-compatible", started);
+        return res.status(502).json({ error: { code: "invalid_provider_response", message: "The image provider returned an unsupported response. It must return data items containing url or b64_json." } });
+      }
+      await record(req, "image", "/v1/images/generations", imageModel, 200, "openai-compatible", started);
+      return res.json({
+        created: Number.isInteger(result.created) ? result.created : Math.floor(Date.now() / 1000),
+        data: result.data.slice(0, count).map(item => ({
+          ...(typeof item.url === "string" ? { url: item.url } : {}),
+          ...(typeof item.b64_json === "string" ? { b64_json: item.b64_json } : {})
+        }))
+      });
+    } catch (error) {
+      const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+      const status = timedOut ? 504 : 503;
+      await record(req, "image", "/v1/images/generations", imageModel, status, "openai-compatible", started);
+      console.error("Nexora image provider request failed:", timedOut ? "timeout after 90 seconds" : error.name + " " + error.message);
+      return res.status(status).json({ error: { code: timedOut ? "provider_timeout" : "provider_unavailable", message: timedOut ? "The image provider took too long to respond." : "Nexora could not reach the configured image provider." } });
+    }
+  });
+
+  // Video remains a separate Day 7 capability.
+  app.post("/v1/videos/generations", requireDatabase, authenticate, async (req, res) => {
+    const started = Date.now();
+    const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    if (typeof body.prompt !== "string" || !body.prompt.trim()) {
+      await record(req, "video", "/v1/videos/generations", body.model, 400, null, started);
+      return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt." } });
+    }
+    await record(req, "video", "/v1/videos/generations", body.model, 503, null, started);
+    return res.status(503).json({ error: { code: "provider_not_configured", message: "Video generation will be configured in Day 7." } });
+  });
 };

@@ -296,6 +296,25 @@ app.post("/api/keys/:id/revoke", requireDatabase, requireUser, async (req,res)=>
   catch(e){console.error("API key revoke failed:",e.message);res.status(500).json({error:"Could not revoke API key."});}
 });
 
+app.get("/api/usage", requireDatabase, requireUser, async (req,res)=>{
+  try {
+    const [summary, recent] = await Promise.all([
+      pool.query(`SELECT COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE created_at >= date_trunc('day', NOW()))::int AS today,
+        COUNT(*) FILTER (WHERE status_code >= 200 AND status_code < 300)::int AS successful,
+        COUNT(*) FILTER (WHERE status_code >= 400)::int AS failed
+        FROM api_usage WHERE user_id=$1`, [req.session.userId]),
+      pool.query(`SELECT u.id,u.capability,u.endpoint,u.model,u.status_code,u.provider,u.duration_ms,u.created_at,p.name AS project_name
+        FROM api_usage u JOIN projects p ON p.id=u.project_id
+        WHERE u.user_id=$1 ORDER BY u.created_at DESC LIMIT 10`, [req.session.userId])
+    ]);
+    res.json({summary:summary.rows[0],recent:recent.rows});
+  } catch(e) {
+    console.error("Usage load failed:",e.message);
+    res.status(500).json({error:"Could not load API usage."});
+  }
+});
+
 // Public API CORS: allow external apps and API clients to call Nexora.
 app.use("/v1", (req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");

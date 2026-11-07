@@ -10,10 +10,14 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
     try {
       const hash = crypto.createHash("sha256").update(match[1]).digest("hex");
       const result = await pool.query(
-        "SELECT k.id AS api_key_id, k.user_id, k.project_id FROM api_keys k JOIN projects p ON p.id=k.project_id AND p.user_id=k.user_id WHERE k.key_hash=$1 AND k.revoked_at IS NULL",
+        "SELECT k.id AS api_key_id, k.user_id, k.project_id, k.capability FROM api_keys k JOIN projects p ON p.id=k.project_id AND p.user_id=k.user_id WHERE k.key_hash=$1 AND k.revoked_at IS NULL",
         [hash]
       );
       if (!result.rowCount) return res.status(401).json({ error: { code: "invalid_api_key", message: "The API key is invalid, revoked, or no longer linked to a project." } });
+      const expectedCapability = req.path.startsWith("/v1/images/") ? "image" : req.path.startsWith("/v1/videos/") ? "video" : "text";
+      if (result.rows[0].capability !== expectedCapability) {
+        return res.status(403).json({ error: { code: "key_capability_mismatch", message: "This API key is not enabled for the requested capability." } });
+      }
       req.nexora = result.rows[0];
       pool.query("UPDATE api_keys SET last_used_at=NOW() WHERE id=$1", [req.nexora.api_key_id]).catch(() => {});
       next();

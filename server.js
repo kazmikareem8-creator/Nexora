@@ -133,12 +133,21 @@ function publicUser(user) {
 }
 
 app.get("/api/health", (_req, res) => {
+  const textProviderConfigured = Boolean(
+    process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_2 ||
+    process.env.GEMINI_API_KEY_3 || process.env.GROQ_API_KEY
+  );
   res.json({
     status: "online",
     name: "Nexora",
-    stage: "day-two-authentication",
+    stage: "day-five-text-gateway",
     database: databaseReady ? "connected" : "unavailable",
-    aiGatewayReady: false
+    aiGatewayReady: true,
+    capabilities: {
+      text: textProviderConfigured ? "configured" : "not_configured",
+      image: "not_configured",
+      video: "not_configured"
+    }
   });
 });
 

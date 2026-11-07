@@ -152,7 +152,7 @@ app.get("/api/health", (_req, res) => {
     aiGatewayReady: true,
     capabilities: {
       text: textProviderConfigured ? "configured" : "not_configured",
-      image: "not_configured",
+      image: process.env.IMAGE_API_BASE_URL && process.env.IMAGE_API_KEY && process.env.IMAGE_MODEL ? "configured" : "not_configured",
       video: "not_configured"
     }
   });

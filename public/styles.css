@@ -58,3 +58,6 @@
 .danger-button{border-color:#8a4c40;color:#ffb0a0}
 .danger-button:hover{border-color:#ff8f7a;color:#ffd0c7}
 @media(max-width:520px){.project-page-row{flex-wrap:wrap}.project-page-row .secondary-button{margin-left:auto}.project-settings-form .settings-actions>*{flex:1}}
+
+/* Keep the empty-project prompt hidden when projects exist. */
+.empty-state[hidden]{display:none!important}

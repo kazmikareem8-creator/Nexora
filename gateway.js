@@ -141,7 +141,7 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
 
   // Image generation uses an OpenAI-compatible upstream provider.
   // Configure IMAGE_API_BASE_URL, IMAGE_API_KEY and IMAGE_MODEL on the server.
-  const imageBaseUrl = (process.env.IMAGE_API_BASE_URL || "").replace(/\\/+$/, "");
+  const imageBaseUrl = (process.env.IMAGE_API_BASE_URL || "").replace(/\/+$/, "");
   const imageApiKey = process.env.IMAGE_API_KEY || "";
   const imageModel = process.env.IMAGE_MODEL || "";
   const imageConfigured = Boolean(imageBaseUrl && imageApiKey && imageModel);
@@ -153,7 +153,7 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
     const count = body.n === undefined ? 1 : Number(body.n);
     const size = body.size === undefined ? "1024x1024" : body.size;
     if (!prompt || prompt.length > 4000 || !Number.isInteger(count) || count < 1 || count > 4 ||
-        typeof size !== "string" || !/^\\d{2,4}x\\d{2,4}$/.test(size)) {
+        typeof size !== "string" || !/^\d{2,4}x\d{2,4}$/.test(size)) {
       await record(req, "image", "/v1/images/generations", body.model, 400, null, started);
       return res.status(400).json({ error: { code: "invalid_request", message: "Provide a prompt (up to 4,000 characters), n between 1 and 4, and a size such as 1024x1024." } });
     }

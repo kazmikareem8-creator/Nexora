@@ -45,12 +45,12 @@ The chat endpoint returns an OpenAI-style `chat.completion` response. Successful
 ## Capability status
 
 - **Text:** connected to configured upstream providers. Nexora tries configured Gemini keys first and then Groq if Gemini attempts fail. Availability depends on provider model access, quotas, rate limits and upstream service health.
-- **Images:** endpoint exists but returns `503 provider_not_configured` until a real provider is connected.
+- **Images:** OpenAI-compatible image generation gateway is implemented. Configure `IMAGE_API_BASE_URL`, `IMAGE_API_KEY`, and `IMAGE_MODEL` on the server to enable it. The upstream must accept `POST /images/generations` with bearer authentication and return OpenAI-style `data` items containing `url` or `b64_json`. Requests are authenticated with Image-capability Nexora keys and usage is recorded.
 - **Video:** endpoint exists but returns `503 provider_not_configured` until a real provider is connected.
 
 Nexora API keys authenticate requests; they do not themselves include AI inference, unlimited usage or free compute. Provider free tiers and hosting quotas apply and may change.
 
-## Run locally
+### Image generation configuration\n\nSet these environment variables on the server only (never in browser code):\n\n- `IMAGE_API_BASE_URL` — base URL of an OpenAI-compatible image API (without the `/images/generations` suffix)\n- `IMAGE_API_KEY` — provider credential\n- `IMAGE_MODEL` — model name accepted by that provider\n\nExample request:\n\n```http\nPOST /v1/images/generations\nAuthorization: Bearer nx_live_YOUR_IMAGE_KEY\nContent-Type: application/json\n\n{ "model": "nexora-image", "prompt": "A small red cabin in a snowy forest", "n": 1, "size": "1024x1024" }\n```\n\nNexora returns an OpenAI-style `created` and `data` response. The provider credential and model must be valid and available under that provider account; provider pricing, quotas and terms apply.\n\n## Run locally
 
 Requires Node.js 20 or newer.
 

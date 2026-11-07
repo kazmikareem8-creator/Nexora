@@ -10,6 +10,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === "production";
 
+if (isProduction && !process.env.SESSION_SECRET) {
+  console.error("SESSION_SECRET must be configured in production. Refusing to start.");
+  process.exit(1);
+}
+
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "32kb" }));
@@ -86,7 +91,7 @@ if (pool) {
       pruneSessionInterval: 15 * 60
     }),
     name: "nexora.sid",
-    secret: process.env.SESSION_SECRET || "development-only-change-this-secret",
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {

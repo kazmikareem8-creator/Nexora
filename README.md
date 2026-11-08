@@ -1,13 +1,13 @@
 # Nexora
 
-Nexora is a free-first AI API workspace and gateway. It provides project-linked API keys and OpenAI-style endpoints for text and image generation.
+Nexora is a free-first AI API workspace and gateway. It provides project-linked API keys and endpoints for text, image and asynchronous video generation.
 
 ## Current capabilities
 
 - Account registration and sign-in
 - Projects with descriptions
 - Project-linked API keys with one-time secret display and revocation
-- Separate **Text** and **Image** key capabilities
+- Separate **Text**, **Image** and **Video** key capabilities
 - Hashed API-key storage (the raw key is shown only when created)
 - OpenAI-compatible text chat endpoint and model listing
 - Text routing: configured Gemini keys are tried first; Groq is used as a fallback when configured
@@ -15,7 +15,7 @@ Nexora is a free-first AI API workspace and gateway. It provides project-linked 
 - Per-request usage records and dashboard statistics
 - Render health endpoint
 
-Video generation is **not configured yet**. The video endpoint currently returns `503 provider_not_configured`; video is planned for a later stage.
+Video generation uses fal.ai H3 Max Turbo through its asynchronous queue API. Configure `VIDEO_API_KEY` on the server before using it. Provider pricing and account credits apply.
 
 ## Base URL
 
@@ -28,7 +28,7 @@ https://nexora-x1tc.onrender.com
 1. Sign in to the Nexora dashboard.
 2. Create or select a project.
 3. Open API Keys and create a key.
-4. Choose **Text** for chat/model requests or **Image** for image generation.
+4. Choose **Text** for chat/model requests, **Image** for image generation or **Video** for video generation.
 5. Copy the secret when it is displayed. Nexora stores a hash, so the full secret cannot be displayed again. If it is lost, revoke it and create another key.
 6. Keep the key on your server or in a secure secret manager. Do not put it in public frontend code, source control, screenshots, or public repositories.
 
@@ -38,7 +38,7 @@ All public API requests use this header:
 Authorization: Bearer nx_live_YOUR_NEXORA_KEY
 ```
 
-Use a Text key for `/v1/models` and `/v1/chat/completions`. Use an Image key for `/v1/images/generations`. Using the wrong capability returns `403 key_capability_mismatch`.
+Use a Text key for `/v1/models` and `/v1/chat/completions`. Use an Image key for `/v1/images/generations` and a Video key for `/v1/videos/generations` and its status endpoint. Using the wrong capability returns `403 key_capability_mismatch`.
 
 ## Text API
 
@@ -109,6 +109,49 @@ Set these environment variables on the Nexora server (for example, in Render):
 
 Never expose `IMAGE_API_KEY` in browser code or commit it to GitHub. Provider pricing, credits, quotas, model availability and terms apply.
 
+
+## Video API
+
+Video generation requires a Video-capability Nexora key and a fal.ai API key configured server-side.
+
+### Submit a video job
+
+```http
+POST /v1/videos/generations
+Authorization: Bearer nx_live_YOUR_VIDEO_KEY
+Content-Type: application/json
+
+{
+  "prompt": "A cinematic aerial view of a futuristic city at sunset",
+  "duration": 5,
+  "resolution": "768P",
+  "aspect_ratio": "16:9",
+  "prompt_expansion_mode": "balanced"
+}
+```
+
+The endpoint returns HTTP `202` with a Nexora job ID and a `status_url`. Poll that URL using the same Video API key until status is `COMPLETED` or `FAILED`. A completed job includes `video_url`.
+
+Supported duration: 0.92–15 seconds. Resolutions: `480P`, `768P`, `1080P`. Aspect ratios: `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`. Prompt expansion: `disabled`, `balanced`, `quality`.
+
+### Check a video job
+
+```http
+GET /v1/videos/VIDEO_JOB_ID
+Authorization: Bearer nx_live_YOUR_VIDEO_KEY
+```
+
+Jobs are scoped to the user, project and API key that created them. Keep polling at a modest interval (for example, every 5–10 seconds).
+
+### Server-side video provider configuration
+
+Set these variables on the Nexora Render service:
+
+- `VIDEO_API_KEY` — fal.ai API key (keep private)
+- `VIDEO_MODEL` — optional; defaults to `minimax/h3-max-turbo/text-to-video`
+
+The current listed fal.ai rate for this endpoint is $0.0175 per second; rates and billing can change. Provider credits and account limits apply. Nexora does not provide free or unlimited video compute.
+
 ## Usage tracking
 
 The Nexora dashboard records API requests and shows summary statistics and recent activity. The signed-in dashboard endpoint is:
@@ -171,4 +214,4 @@ The Render service deploys from the `main` branch. Free hosting may sleep or hav
 
 ## Important limits
 
-Nexora API keys authenticate requests; they do not include inference compute, unlimited usage or free provider access. Text and image generation depend on configured upstream providers, their pricing, free tiers, quotas, rate limits and service availability. Render hosting and database plans also have limits.
+Nexora API keys authenticate requests; they do not include inference compute, unlimited usage or free provider access. Text, image and video generation depend on configured upstream providers, their pricing, free tiers, quotas, rate limits and service availability. Render hosting and database plans also have limits.

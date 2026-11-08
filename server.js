@@ -74,6 +74,24 @@ async function initializeDatabase() {
     `);
     await pool.query(`CREATE TABLE IF NOT EXISTS api_usage (id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, api_key_id BIGINT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE, capability VARCHAR(16) NOT NULL, endpoint VARCHAR(120) NOT NULL, model VARCHAR(120), status_code INTEGER NOT NULL, provider VARCHAR(80), duration_ms INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
     await pool.query("CREATE INDEX IF NOT EXISTS api_usage_user_created_idx ON api_usage(user_id, created_at DESC)");
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS video_jobs (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        api_key_id BIGINT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+        provider VARCHAR(40) NOT NULL,
+        model VARCHAR(160) NOT NULL,
+        provider_request_id VARCHAR(160) NOT NULL UNIQUE,
+        status VARCHAR(24) NOT NULL DEFAULT 'IN_QUEUE',
+        video_url TEXT,
+        error_message TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query("CREATE INDEX IF NOT EXISTS video_jobs_owner_idx ON video_jobs(user_id, project_id, api_key_id, created_at DESC)");
+
     databaseReady = true;
     databaseError = null;
     console.log("Nexora database initialized");
@@ -153,7 +171,7 @@ app.get("/api/health", (_req, res) => {
     capabilities: {
       text: textProviderConfigured ? "configured" : "not_configured",
       image: process.env.IMAGE_API_BASE_URL && process.env.IMAGE_API_KEY && process.env.IMAGE_MODEL ? "configured" : "not_configured",
-      video: "not_configured"
+      video: process.env.VIDEO_API_KEY ? "configured" : "not_configured"
     }
   });
 });
@@ -294,7 +312,7 @@ app.post("/api/keys", requireDatabase, requireUser, async (req,res)=>{
   const name=typeof req.body.name==="string"?req.body.name.trim().slice(0,80):"";
   const projectId=typeof req.body.projectId==="string"?req.body.projectId:"";
   const capability=typeof req.body.capability==="string"?req.body.capability:"text";
-  if(!["text","image"].includes(capability))return res.status(400).json({error:"Choose a supported API key type."});
+  if(!["text","image","video"].includes(capability))return res.status(400).json({error:"Choose a supported API key type."});
   if(!name)return res.status(400).json({error:"Enter a name for this API key."});
   if(!validId(projectId))return res.status(400).json({error:"Choose a valid project for this API key."});
   try {

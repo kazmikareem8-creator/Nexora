@@ -203,15 +203,100 @@ module.exports = function mountGateway(app, pool, requireDatabase) {
     }
   });
 
-  // Video remains a separate Day 7 capability.
+  // Video generation uses fal.ai's asynchronous queue API.
+  const videoProviderKey = process.env.VIDEO_API_KEY || "";
+  const videoEndpoint = process.env.VIDEO_MODEL || "minimax/h3-max-turbo/text-to-video";
+  const videoConfigured = Boolean(videoProviderKey);
+  const videoQueueBase = "https://queue.fal.run/";
+
   app.post("/v1/videos/generations", requireDatabase, authenticate, async (req, res) => {
     const started = Date.now();
     const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
-    if (typeof body.prompt !== "string" || !body.prompt.trim()) {
-      await record(req, "video", "/v1/videos/generations", body.model, 400, null, started);
-      return res.status(400).json({ error: { code: "invalid_request", message: "Provide a non-empty prompt." } });
+    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+    const duration = body.duration === undefined ? 5 : Number(body.duration);
+    const resolution = body.resolution === undefined ? "768P" : body.resolution;
+    const aspectRatio = body.aspect_ratio === undefined ? "16:9" : body.aspect_ratio;
+    const expansion = body.prompt_expansion_mode === undefined ? "balanced" : body.prompt_expansion_mode;
+    if (!prompt || prompt.length > 50000 || !Number.isFinite(duration) || duration < 0.92 || duration > 15 ||
+        !["480P","768P","1080P"].includes(resolution) ||
+        !["21:9","16:9","4:3","1:1","3:4","9:16"].includes(aspectRatio) ||
+        !["disabled","balanced","quality"].includes(expansion)) {
+      await record(req, "video", "/v1/videos/generations", videoEndpoint, 400, null, started);
+      return res.status(400).json({ error: { code: "invalid_request", message: "Provide a prompt (up to 50,000 characters), duration 0.92–15 seconds, resolution 480P/768P/1080P, a supported aspect_ratio, and prompt_expansion_mode disabled/balanced/quality." } });
     }
-    await record(req, "video", "/v1/videos/generations", body.model, 503, null, started);
-    return res.status(503).json({ error: { code: "provider_not_configured", message: "Video generation will be configured in Day 7." } });
+    if (!videoConfigured) {
+      await record(req, "video", "/v1/videos/generations", videoEndpoint, 503, null, started);
+      return res.status(503).json({ error: { code: "provider_not_configured", message: "Video generation is not configured. Set VIDEO_API_KEY in the Nexora server environment." } });
+    }
+    try {
+      const upstream = await fetch(videoQueueBase + videoEndpoint, {
+        method: "POST",
+        headers: { "Authorization": "Key " + videoProviderKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, duration, resolution, aspect_ratio: aspectRatio, prompt_expansion_mode: expansion, enable_safety_checker: true }),
+        signal: AbortSignal.timeout(30000)
+      });
+      const result = await upstream.json().catch(() => ({}));
+      if (!upstream.ok || typeof result.request_id !== "string") {
+        const status = upstream.status === 429 ? 429 : upstream.status >= 500 ? 502 : 502;
+        await record(req, "video", "/v1/videos/generations", videoEndpoint, status, "fal.ai", started);
+        console.error("Nexora video provider rejected request:", upstream.status, result?.detail || result?.message || "Unknown provider error");
+        return res.status(status).json({ error: { code: upstream.status === 429 ? "provider_rate_limited" : "provider_error", message: "The video provider could not accept this job. Check provider access, credits and configuration." } });
+      }
+      const job = await pool.query(
+        "INSERT INTO video_jobs(user_id,project_id,api_key_id,provider,model,provider_request_id,status,created_at,updated_at) VALUES($1,$2,$3,'fal.ai',$4,$5,'IN_QUEUE',NOW(),NOW()) RETURNING id,status,created_at",
+        [req.nexora.user_id, req.nexora.project_id, req.nexora.api_key_id, videoEndpoint, result.request_id]
+      );
+      await record(req, "video", "/v1/videos/generations", videoEndpoint, 202, "fal.ai", started);
+      return res.status(202).json({ id: String(job.rows[0].id), object: "video.job", status: "IN_QUEUE", model: videoEndpoint, status_url: "/v1/videos/" + job.rows[0].id, created_at: job.rows[0].created_at });
+    } catch (error) {
+      const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+      await record(req, "video", "/v1/videos/generations", videoEndpoint, timedOut ? 504 : 503, "fal.ai", started);
+      console.error("Nexora video submission failed:", timedOut ? "timeout" : error.name + " " + error.message);
+      return res.status(timedOut ? 504 : 503).json({ error: { code: timedOut ? "provider_timeout" : "provider_unavailable", message: "Nexora could not submit the video job to fal.ai." } });
+    }
+  });
+
+  app.get("/v1/videos/:id", requireDatabase, authenticate, async (req, res) => {
+    if (!/^[1-9][0-9]*$/.test(req.params.id) || req.params.id.length > 18) {
+      return res.status(400).json({ error: { code: "invalid_request", message: "A valid video job ID is required." } });
+    }
+    const started = Date.now();
+    try {
+      const found = await pool.query("SELECT id,provider_request_id,model,status,video_url,error_message,created_at,updated_at FROM video_jobs WHERE id=$1 AND user_id=$2 AND project_id=$3 AND api_key_id=$4", [req.params.id,req.nexora.user_id,req.nexora.project_id,req.nexora.api_key_id]);
+      if (!found.rowCount) return res.status(404).json({ error: { code: "video_job_not_found", message: "This video job was not found for this API key and project." } });
+      const job = found.rows[0];
+      if (job.status === "COMPLETED" || job.status === "FAILED") {
+        return res.json({ id:String(job.id),object:"video.job",status:job.status,model:job.model,video_url:job.video_url,error:job.error_message,created_at:job.created_at,updated_at:job.updated_at });
+      }
+      const statusResponse = await fetch(videoQueueBase + videoEndpoint + "/requests/" + encodeURIComponent(job.provider_request_id) + "/status", {
+        headers: { "Authorization": "Key " + videoProviderKey },
+        signal: AbortSignal.timeout(15000)
+      });
+      const statusData = await statusResponse.json().catch(() => ({}));
+      if (!statusResponse.ok) throw new Error("fal.ai status lookup failed with HTTP " + statusResponse.status);
+      let status = statusData.status || job.status;
+      let videoUrl = null;
+      let errorMessage = null;
+      if (status === "COMPLETED") {
+        const resultResponse = await fetch(videoQueueBase + videoEndpoint + "/requests/" + encodeURIComponent(job.provider_request_id), {
+          headers: { "Authorization": "Key " + videoProviderKey },
+          signal: AbortSignal.timeout(20000)
+        });
+        const output = await resultResponse.json().catch(() => ({}));
+        if (!resultResponse.ok) throw new Error("fal.ai result lookup failed with HTTP " + resultResponse.status);
+        videoUrl = output.video?.url || output.video_url || null;
+        if (!videoUrl) { status = "FAILED"; errorMessage = "The provider completed the job but returned no video URL."; }
+      } else if (status === "FAILED") {
+        errorMessage = "The video provider reported that generation failed.";
+      }
+      await pool.query("UPDATE video_jobs SET status=$1,video_url=$2,error_message=$3,updated_at=NOW() WHERE id=$4", [status,videoUrl,errorMessage,job.id]);
+      if (status === "COMPLETED" || status === "FAILED") {
+        await record(req, "video", "/v1/videos/" + req.params.id, job.model, status === "COMPLETED" ? 200 : 502, "fal.ai", started);
+      }
+      return res.json({ id:String(job.id),object:"video.job",status,model:job.model,video_url:videoUrl,error:errorMessage,created_at:job.created_at,updated_at:new Date().toISOString() });
+    } catch (error) {
+      console.error("Nexora video status lookup failed:", error.message);
+      return res.status(503).json({ error: { code: "provider_unavailable", message: "Could not retrieve the video job status. Try again shortly." } });
+    }
   });
 };
